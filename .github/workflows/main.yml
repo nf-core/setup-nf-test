@@ -4,9 +4,16 @@ jobs:
   test:
     runs-on: ubuntu-latest
     name: A test to install nf-test
+    strategy:
+      matrix:
+        NF-TEST_VER:
+          - "0.7.0"
+          - "0.7.1"
     steps:
       - uses: actions/checkout@v3
       - name: nf-test install action step
         uses: ./
+        with:
+          version: "${{ matrix.NF-TEST_VER }}"
       - name: Smoke test
         run: nf-test version
