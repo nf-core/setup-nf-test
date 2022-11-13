@@ -3,9 +3,9 @@ description: 'Install nf-test and add it to the PATH'
 author: 'nf-core'
 inputs:
   version:
-    description: 'The nf-test version to download (if necessary) and use. Example: 0.7.0'
+    description: 'The nf-test version to download (if necessary) and use. Example: 0.7.0. Installs latest by default'
     required: true
-    default: 0.7.1
+    default: "" # latest
 runs:
   using: "composite"
   steps:
