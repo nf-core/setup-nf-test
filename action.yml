@@ -1,0 +1,17 @@
+name: 'Setup nf-test'
+description: 'Install nf-test and add it to the PATH'
+author: 'nf-core'
+inputs:
+  version:
+    description: 'The nf-test version to download (if necessary) and use. Example: 0.7.0'
+    required: true
+    default: 0.7.1
+runs:
+  using: "composite"
+  steps:
+    - name: Download nf-test
+      run: curl -fsSL https://code.askimed.com/install/nf-test | bash -s ${{ inputs.version }}
+      shell: bash
+    - name: Install nf-test to PATH
+      run: sudo mv nf-test /usr/local/bin/
+      shell: bash
