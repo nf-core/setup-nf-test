@@ -1,0 +1,12 @@
+on: [push]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: A test to install nf-test
+    steps:
+      - uses: actions/checkout@v3
+      - name: nf-test install action step
+        uses: ./
+      - name: Smoke test
+        run: nf-test version
