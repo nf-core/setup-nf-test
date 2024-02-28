@@ -8,4 +8,4 @@ inputs:
     default: 0.8.4 # latest
 runs:
   using: "node20"
-  main: "index.js"
+  main: "dist/index.js"
