@@ -36,8 +36,8 @@ async function setup() {
       fs.renameSync(path.join(pathToCLI, "nf-test.jar"), jar_final_path)
       core.debug("Cache the jar")
       core.debug("Version:")
-      core.debug(version)
-      tc.cacheFile(jar_final_path, "nft_jar", version)
+      // core.debug(version)
+      // tc.cacheFile(jar_final_path, "nft_jar", version)
     }
   } catch (e) {
     core.setFailed(e)
