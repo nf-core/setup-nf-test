@@ -41,13 +41,13 @@ async function setup() {
             );
             core.addPath(path.join(pathToCLI, download.binPath));
 
-            // Move the jar to ~/.nf-test/nf-test.jar
+            core.debug("Move the jar to ~/.nf-test/nf-test.jar")
             fs.mkdirSync(path.join(os.homedir(), ".nf-test"));
             jar_final_path = fs.renameSync(
                 path.join(pathToCLI, download.jarPath),
                 path.join(os.homedir(), ".nf-test", "nf-test.jar"),
             );
-            // Cache the jar
+            core.debug("Cache the jar")
             tc.cacheFile(jar_final_path, "nf-test.jar", version);
         }
     } catch (e) {
