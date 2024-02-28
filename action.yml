@@ -5,7 +5,7 @@ inputs:
   version:
     description: "The nf-test version to download (if necessary) and use. Example: 0.7.0. Installs latest by default"
     required: true
-    default: "" # latest
+    default: 0.8.4 # latest
 runs:
   using: "node20"
   main: "index.js"
