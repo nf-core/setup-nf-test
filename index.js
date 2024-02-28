@@ -35,6 +35,7 @@ async function setup() {
       jar_final_path = path.join(os.homedir(), ".nf-test", "nf-test.jar")
       fs.renameSync(path.join(pathToCLI, "nf-test.jar"), jar_final_path)
       core.debug("Cache the jar")
+      core.debug(version)
       tc.cacheFile(jar_final_path, "nf-test.jar", version)
     }
   } catch (e) {
