@@ -41,10 +41,11 @@ async function setup() {
             );
             core.addPath(path.join(pathToCLI, download.binPath));
 
-            core.debug("Move the jar to ~/.nf-test/nf-test.jar")
+            core.debug("Make ~/.nf-test")
             fs.mkdirSync(path.join(os.homedir(), ".nf-test"));
+            core.debug("Move the jar to ~/.nf-test/nf-test.jar")
             jar_final_path = fs.renameSync(
-                path.join(pathToCLI, download.jarPath),
+                path.join(pathToCLI, "nf-test.jar"),
                 path.join(os.homedir(), ".nf-test", "nf-test.jar"),
             );
             core.debug("Cache the jar")
