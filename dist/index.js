@@ -33,7 +33,7 @@ async function setup() {
       const pathToCLI = await extract(pathToTarball)
 
       // Expose the tool by adding it to the PATH
-      tc.cacheFile(
+      await tc.cacheFile(
         path.join(pathToCLI, download.binPath),
         "nf-test",
         "nf-test",
@@ -48,7 +48,7 @@ async function setup() {
       fs.renameSync(path.join(pathToCLI, "nf-test.jar"), jar_final_path)
       core.debug("Cache the jar")
       core.debug("Version:")
-      tc.cacheFile(jar_final_path, "nf-test.jar", "nf-test.jar", version)
+      await tc.cacheFile(jar_final_path, "nf-test.jar", "nf-test.jar", version)
     }
   } catch (e) {
     core.setFailed(e)
