@@ -32,13 +32,14 @@ async function setup() {
         : tc.extractTar
       const pathToCLI = await extract(pathToTarball)
 
-      // Expose the tool by adding it to the PATH
+      core.debug("Expose the tool by adding it to the PATH")
       await tc.cacheFile(
         path.join(pathToCLI, download.binPath),
         "nf-test",
         "nf-test",
         version
       )
+      core.debug("Add nf-test to path")
       core.addPath(path.join(pathToCLI, download.binPath))
 
       core.debug("Make ~/.nf-test")
