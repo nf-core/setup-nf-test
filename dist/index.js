@@ -73,6 +73,8 @@ async function setup() {
 
       // Add nf-test to the PATH
       core.addPath(path.join(pathToCLI, "bin"))
+
+      core.debug("current Path:" + process.env.PATH)
     }
   } catch (e) {
     core.setFailed(e)
