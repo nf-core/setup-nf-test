@@ -45,11 +45,14 @@ async function setup() {
       core.debug("Make ~/.nf-test")
       fs.mkdirSync(path.join(os.homedir(), ".nf-test"))
       core.debug("Move the jar to ~/.nf-test/nf-test.jar")
-      jar_final_path = path.join(os.homedir(), ".nf-test", "nf-test.jar")
-      fs.renameSync(path.join(pathToCLI, "nf-test.jar"), jar_final_path)
+      const jarFinalPath = path.join(os.homedir(), ".nf-test", "nf-test.jar");
+      fs.renameSync(path.join(pathToCLI, "nf-test.jar"), jarFinalPath);
       core.debug("Cache the jar")
       core.debug("Version:")
-      await tc.cacheFile(jar_final_path, "nf-test.jar", "nf-test.jar", version)
+      await tc.cacheFile(jarFinalPath, "nf-test.jar", "nf-test.jar", version);
+
+      // Add nf-test to the PATH
+      core.addPath(path.join(pathToCLI, "bin"));
     }
   } catch (e) {
     core.setFailed(e)
