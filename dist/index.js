@@ -20,6 +20,7 @@ async function setup() {
     const toolPath = tc.find("nf-test", version)
     const jarPath = tc.find("nf-test.jar", version)
     if (toolPath !== "") {
+      core.debug(`nf-test found in cache ${toolPath}`)
       core.addPath(path.join(toolPath, "bin"))
     } else {
       core.debug(`no version of nf-test matching "${version}" is installed`)
