@@ -32,6 +32,25 @@ async function setup() {
         : tc.extractTar
       const pathToCLI = await extract(pathToTarball)
 
+      core.debug(`Path to CLI: ${pathToCLI}`)
+      core.debug(`Bin path: ${download.binPath}`)
+
+      // Check if the file exists and is executable
+      if (fs.existsSync(path.join(pathToCLI, download.binPath))) {
+        core.debug("nf-test exists")
+        try {
+          fs.accessSync(
+            path.join(pathToCLI, download.binPath),
+            fs.constants.X_OK
+          )
+          core.debug("nf-test is executable")
+        } catch (err) {
+          core.debug("nf-test is not executable")
+        }
+      } else {
+        core.debug("nf-test does not exist")
+      }
+
       core.debug("Expose the tool by adding it to the PATH")
       await tc.cacheFile(
         path.join(pathToCLI, download.binPath),
@@ -45,19 +64,20 @@ async function setup() {
       core.debug("Make ~/.nf-test")
       fs.mkdirSync(path.join(os.homedir(), ".nf-test"))
       core.debug("Move the jar to ~/.nf-test/nf-test.jar")
-      const jarFinalPath = path.join(os.homedir(), ".nf-test", "nf-test.jar");
-      fs.renameSync(path.join(pathToCLI, "nf-test.jar"), jarFinalPath);
+      const jarFinalPath = path.join(os.homedir(), ".nf-test", "nf-test.jar")
+      fs.renameSync(path.join(pathToCLI, "nf-test.jar"), jarFinalPath)
       core.debug("Cache the jar")
       core.debug("Version:")
-      await tc.cacheFile(jarFinalPath, "nf-test.jar", "nf-test.jar", version);
+      await tc.cacheFile(jarFinalPath, "nf-test.jar", "nf-test.jar", version)
 
       // Add nf-test to the PATH
-      core.addPath(path.join(pathToCLI, "bin"));
+      core.addPath(path.join(pathToCLI, "bin"))
     }
   } catch (e) {
     core.setFailed(e)
   }
-}
+} 
+
 
 module.exports = setup
 
