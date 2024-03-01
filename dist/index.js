@@ -53,14 +53,14 @@ async function setup() {
       }
 
       core.debug("Expose the tool by adding it to the PATH")
-      await tc.cacheFile(
+      const cachedPath = await tc.cacheFile(
         path.join(pathToCLI, download.binPath),
         "nf-test",
         "nf-test",
         version
       )
       core.debug("Add nf-test to path")
-      core.addPath(path.join(pathToCLI, download.binPath))
+      core.addPath(path.join(cachedPath))
 
       core.debug("Make ~/.nf-test")
       fs.mkdirSync(path.join(os.homedir(), ".nf-test"))
@@ -70,9 +70,6 @@ async function setup() {
       core.debug("Cache the jar")
       core.debug("Version:")
       await tc.cacheFile(jarFinalPath, "nf-test.jar", "nf-test.jar", version)
-
-      // Add nf-test to the PATH
-      core.addPath(path.join(pathToCLI, "bin"))
 
       core.debug("current Path:" + process.env.PATH)
     }
