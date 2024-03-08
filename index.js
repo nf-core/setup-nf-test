@@ -11,15 +11,14 @@ async function setup() {
     const version = getInput("version")
 
     const paths = [
-      path.join(os.homedir(), ".nf-test", "nf-test.jar"),
-      path.join(os.homedir(), ".nf-test", "nf-test")
+      path.join(os.homedir(), ".nf-test", "nf-test"),
+      path.join(os.homedir(), ".nf-test", "nf-test.jar")
     ]
     const key = "nf-test-" + version
     const restoreKey = await restoreCache(paths, key)
     if (restoreKey) {
       debug(`Cache restored from key: ${restoreKey}`)
-      addPath(path.join(os.homedir(), ".nf-test", "nf-test"))
-      addPath(path.join(os.homedir(), ".nf-test", "nf-test.jar"))
+      addPath(paths[0])
       return
     }
     debug(`no version of nf-test matching "${version}" is installed`)
@@ -51,32 +50,29 @@ async function setup() {
     debug("Make ~/.nf-test")
     await fs.mkdir(path.join(os.homedir(), ".nf-test"))
 
-    debug("Move the jar to ~/.nf-test/nf-test.jar")
-    const jarFinalPath = path.join(os.homedir(), ".nf-test", "nf-test.jar")
-    await fs.rename(path.join(pathToCLI, "nf-test.jar"), jarFinalPath)
-
     debug("Move the binary to ~/.nf-test/nf-test")
-    const binFinalFilePath = path.join(os.homedir(), ".nf-test", "nf-test")
-    await fs.rename(binFilePath, binFinalFilePath)
+    await fs.rename(binFilePath, path[0])
+
+    debug("Move the jar to ~/.nf-test/nf-test.jar")
+    await fs.rename(path.join(pathToCLI, "nf-test.jar"), path[1])
+
+    if (await fileExists(path[0])) {
+      debug("nf-test exists")
+      if (await isExecutable(path[0])) {
+        debug("nf-test is executable")
+      } else {
+        debug("nf-test is not executable")
+        //throw error
+        setFailed("nf-test is not executable")
+      }
+    } else {
+      debug("nf-test does not exist")
+      //throw error
+      setFailed("nf-test does not exist")
+    }
 
     debug("Expose the tool by adding it to the PATH")
-
-    addPath(paths)
-
-    // check if paths exist
-    for (const p of paths) {
-      if (await fileExists(p)) {
-        debug(`Path exists: ${p}`)
-      }
-    }
-    // show the contents of the ~/.nf-test directory
-    let files
-    try {
-      files = await fs.readdir(path.join(os.homedir(), ".nf-test"))
-    } catch (e) {
-      debug(e)
-    }
-    debug(`Files in ~/.nf-test: ${files}`)
+    addPath(paths[0])
 
     await saveCache(paths, key)
     debug(`Cache saved with key: ${key}`)
