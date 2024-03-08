@@ -31,7 +31,7 @@ async function setup() {
     debug(`Path to CLI: ${pathToCLI}`)
     debug(`Bin path: ${download.binPath}`)
 
-    const binFilePath = path.join(pathToCLI, download.binPath)
+    const binFilePath = path.resolve(pathToCLI, download.binPath)
     if (await fileExists(binFilePath)) {
       debug("nf-test exists")
       if (await isExecutable(binFilePath)) {
@@ -56,27 +56,22 @@ async function setup() {
 
     debug("Move the jar to ~/.nf-test/nf-test.jar")
     await fs.rename(path.join(pathToCLI, "nf-test.jar"), paths[1])
-
-    if (await fileExists(path[0])) {
-      debug("nf-test exists")
-      if (await isExecutable(path[0])) {
-        debug("nf-test is executable")
-      } else {
-        debug("nf-test is not executable")
-        //throw error
-        setFailed("nf-test is not executable")
-      }
-    } else {
-      debug("nf-test does not exist")
-      //throw error
-      setFailed("nf-test does not exist")
+    try {
+      await fileExists(paths[0])
+    } catch (e) {
+      debug(e)
+    }
+    try {
+      await isExecutable(paths[0])
+    } catch (e) {
+      debug(e)
     }
 
     debug("Expose the tool by adding it to the PATH")
     addPath(paths[0])
 
-    await saveCache(paths, key)
-    debug(`Cache saved with key: ${key}`)
+    // await saveCache(paths, key)
+    // debug(`Cache saved with key: ${key}`)
 
     return
     // // test the cache
