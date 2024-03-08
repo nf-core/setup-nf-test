@@ -1,7 +1,7 @@
 const fs = require("fs").promises
 const os = require("os")
 const path = require("path")
-const { setFailed } = require("@actions/core")
+const { debug } = require("@actions/core")
 
 async function cleanup() {
   try {
