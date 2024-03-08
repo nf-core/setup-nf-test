@@ -4,7 +4,7 @@ author: "nf-core"
 inputs:
   version:
     description: "The nf-test version to download (if necessary) and use. Example: 0.8.0. Installs latest by default"
-    required: true
+    required: false
     default: 0.8.4 # latest
 runs:
   using: "node20"
