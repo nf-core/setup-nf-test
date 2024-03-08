@@ -15,6 +15,8 @@ async function setup() {
   try {
     const version = getInput("version")
 
+    // list cached files
+    let cachedFiles = await fs.readdir(process.env.RUNNER_TOOL_CACHE || "")
     const toolPath = find("nf-test", version)
     const jarPath = find("nf-test.jar", version)
     if (toolPath !== "") {
@@ -23,8 +25,6 @@ async function setup() {
       addPath(jarPath)
       return
     }
-    // list cached files
-    const cachedFiles = await fs.readdir(process.env.RUNNER_TOOL_CACHE || "")
     debug("Cached files:")
     debug(cachedFiles)
     debug(`no version of nf-test matching "${version}" is installed`)
