@@ -17,7 +17,6 @@ jobs:
           cache: "npm"
       - run: npm ci
       - run: npm run build
-      - run: sed -i 's%main.js%dist/index.js%' package.json
       - uses: JasonEtco/build-and-tag-action@dd5e4991048c325f6d85b4155e586fc211c644da # v2
         env:
           GITHUB_TOKEN: ${{ github.token }}
