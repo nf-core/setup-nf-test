@@ -49,8 +49,9 @@ async function setup() {
 
     debug("Make ~/.nf-test")
     await fs.mkdir(path.join(os.homedir(), ".nf-test"))
+    debug(paths)
 
-    debug("Move the binary to ~/.nf-test/nf-test")
+    debug("Move the binary to ~/.nf-test/nf-test " + paths[0])
     await fs.rename(binFilePath, path[0])
 
     debug("Move the jar to ~/.nf-test/nf-test.jar")
