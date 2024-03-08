@@ -23,7 +23,10 @@ async function setup() {
       addPath(jarPath)
       return
     }
-
+    // list cached files
+    const cachedFiles = await fs.readdir(process.env.RUNNER_TOOL_CACHE || "")
+    debug("Cached files:")
+    debug(cachedFiles)
     debug(`no version of nf-test matching "${version}" is installed`)
     const download = getDownloadObject(version)
     const pathToTarball = await downloadTool(download.url)
@@ -61,6 +64,7 @@ async function setup() {
       )
     ])
     addPath(cachedCLIPath)
+    addPath(cachedJarPath)
 
     debug("Make ~/.nf-test")
     await fs.mkdir(path.join(os.homedir(), ".nf-test"))

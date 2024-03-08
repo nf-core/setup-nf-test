@@ -29,7 +29,5 @@ jobs:
         uses: ./
         with:
           version: "${{ matrix.NF-TEST_VER }}"
-      - name: Show PATH
-        run: echo $PATH
       - name: Smoke test
         run: nf-test version
