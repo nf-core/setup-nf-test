@@ -1,74 +1,98 @@
-const fs = require("fs")
+const fs = require("fs").promises
 const os = require("os")
 const path = require("path")
-const core = require("@actions/core")
-const tc = require("@actions/tool-cache")
+const { getInput, debug, setFailed, addPath } = require("@actions/core")
+const {
+  find,
+  downloadTool,
+  extractTar,
+  extractZip,
+  cacheFile
+} = require("@actions/tool-cache")
 const { getDownloadObject } = require("./lib/utils")
 
 async function setup() {
   try {
-    // Get version of tool to be installed
-    const version = core.getInput("version")
+    const version = getInput("version")
 
-    // Download the specific version of the tool, e.g. as a tarball/zipball
-    const toolPath = tc.find("nf-test", version)
-    const jarPath = tc.find("nf-test.jar", version)
+    const toolPath = find("nf-test", version)
+    const jarPath = find("nf-test.jar", version)
     if (toolPath !== "") {
-      core.debug(`nf-test found in cache ${toolPath}`)
-      core.addPath(path.join(toolPath, "bin"))
-    } else {
-      core.debug(`no version of nf-test matching "${version}" is installed`)
-      const download = getDownloadObject(version)
-      const pathToTarball = await tc.downloadTool(download.url)
+      debug(`nf-test found in cache ${toolPath}`)
+      addPath(toolPath)
+      addPath(jarPath)
+      return
+    }
 
-      // Extract the tarball/zipball onto host runner
-      const extract = download.url.endsWith(".zip")
-        ? tc.extractZip
-        : tc.extractTar
-      const pathToCLI = await extract(pathToTarball)
+    debug(`no version of nf-test matching "${version}" is installed`)
+    const download = getDownloadObject(version)
+    const pathToTarball = await downloadTool(download.url)
 
-      core.debug(`Path to CLI: ${pathToCLI}`)
-      core.debug(`Bin path: ${download.binPath}`)
+    const extract = download.url.endsWith(".zip") ? extractZip : extractTar
+    const pathToCLI = await extract(pathToTarball)
 
-      // Check if the file exists and is executable
-      if (fs.existsSync(path.join(pathToCLI, download.binPath))) {
-        core.debug("nf-test exists")
-        try {
-          fs.accessSync(
-            path.join(pathToCLI, download.binPath),
-            fs.constants.X_OK
-          )
-          core.debug("nf-test is executable")
-        } catch (err) {
-          core.debug("nf-test is not executable")
-        }
+    debug(`Path to CLI: ${pathToCLI}`)
+    debug(`Bin path: ${download.binPath}`)
+
+    const binFilePath = path.join(pathToCLI, download.binPath)
+    if (await fileExists(binFilePath)) {
+      debug("nf-test exists")
+      if (await isExecutable(binFilePath)) {
+        debug("nf-test is executable")
       } else {
-        core.debug("nf-test does not exist")
+        debug("nf-test is not executable")
+        //throw error
+        setFailed("nf-test is not executable")
       }
+    } else {
+      debug("nf-test does not exist")
+      //throw error
+      setFailed("nf-test does not exist")
+    }
 
-      core.debug("Expose the tool by adding it to the PATH")
-      const cachedPath = await tc.cacheFile(
-        path.join(pathToCLI, download.binPath),
-        "nf-test",
-        "nf-test",
+    debug("Expose the tool by adding it to the PATH")
+    const [cachedCLIPath, cachedJarPath] = await Promise.all([
+      cacheFile(binFilePath, "nf-test", "nf-test", version),
+      cacheFile(
+        path.join(pathToCLI, "nf-test.jar"),
+        "nf-test.jar",
+        "nf-test.jar",
         version
       )
-      core.debug("Add nf-test to path")
-      core.addPath(path.join(cachedPath))
+    ])
+    addPath(cachedCLIPath)
 
-      core.debug("Make ~/.nf-test")
-      fs.mkdirSync(path.join(os.homedir(), ".nf-test"))
-      core.debug("Move the jar to ~/.nf-test/nf-test.jar")
-      const jarFinalPath = path.join(os.homedir(), ".nf-test", "nf-test.jar")
-      fs.renameSync(path.join(pathToCLI, "nf-test.jar"), jarFinalPath)
-      core.debug("Cache the jar")
-      core.debug("Version:")
-      await tc.cacheFile(jarFinalPath, "nf-test.jar", "nf-test.jar", version)
+    debug("Make ~/.nf-test")
+    await fs.mkdir(path.join(os.homedir(), ".nf-test"))
 
-      core.debug("current Path:" + process.env.PATH)
-    }
+    debug("Move the jar to ~/.nf-test/nf-test.jar")
+    const jarFinalPath = path.join(os.homedir(), ".nf-test", "nf-test.jar")
+    await fs.rename(path.join(pathToCLI, "nf-test.jar"), jarFinalPath)
+
+    debug("Cache the jar")
+    await cacheFile(jarFinalPath, "nf-test.jar", "nf-test.jar", version)
+
+    debug("current Path:" + process.env.PATH)
   } catch (e) {
-    core.setFailed(e)
+    setFailed(e)
+  }
+}
+
+async function fileExists(filePath) {
+  try {
+    await fs.access(filePath)
+    return true
+  } catch (err) {
+    return false
+  }
+}
+
+async function isExecutable(filePath) {
+  try {
+    await fs.access(filePath, fs.constants.X_OK)
+    return true
+  } catch (err) {
+    return false
   }
 }
 
