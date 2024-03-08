@@ -2,7 +2,7 @@
   "name": "setup-nf-test",
   "version": "0.1.0",
   "description": "",
-  "main": "index.js",
+  "main": "dist/index.js",
   "scripts": {
     "build": "ncc build index.js --license licenses.txt",
     "prepare": "husky"
