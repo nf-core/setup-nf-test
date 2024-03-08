@@ -6,10 +6,10 @@ const { setFailed } = require("@actions/core")
 async function cleanup() {
   try {
     const dirPath = path.join(os.homedir(), ".nf-test")
-    await fs.rmdir(dirPath, { recursive: true })
-    console.log(`Directory ${dirPath} has been removed`)
+    await fs.rm(dirPath, { recursive: true })
+    debug(`Directory ${dirPath} has been removed`)
   } catch (error) {
-    setFailed(`Failed to remove directory: ${error}`)
+    debug(`Failed to remove directory: ${error}`)
   }
 }
 

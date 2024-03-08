@@ -55,24 +55,6 @@ async function setup() {
   }
 }
 
-async function fileExists(filePath) {
-  try {
-    await fs.access(filePath)
-    return true
-  } catch (err) {
-    return false
-  }
-}
-
-async function isExecutable(filePath) {
-  try {
-    await fs.access(filePath, fs.constants.X_OK)
-    return true
-  } catch (err) {
-    return false
-  }
-}
-
 module.exports = setup
 
 if (require.main === module) {

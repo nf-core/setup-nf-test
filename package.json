@@ -4,7 +4,7 @@
   "description": "",
   "main": "dist/setup/index.js",
   "scripts": {
-    "build": "ncc build src/setup.js -o dist/setup --license licenses.txt && ncc build src/post.js -o dist/setup --license licenses.txt",
+    "build": "ncc build src/setup.js -o dist/setup --license licenses.txt && ncc build src/post.js -o dist/post --license licenses.txt",
     "prepare": "husky"
   },
   "keywords": [
