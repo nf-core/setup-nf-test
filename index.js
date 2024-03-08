@@ -2,13 +2,7 @@ const fs = require("fs").promises
 const os = require("os")
 const path = require("path")
 const { getInput, debug, setFailed, addPath } = require("@actions/core")
-const {
-  find,
-  downloadTool,
-  extractTar,
-  extractZip,
-  cacheFile
-} = require("@actions/tool-cache")
+const { downloadTool, extractTar, extractZip } = require("@actions/tool-cache")
 const { saveCache, restoreCache } = require("@actions/cache")
 const { getDownloadObject } = require("./lib/utils")
 
@@ -62,10 +56,28 @@ async function setup() {
     await fs.rename(path.join(pathToCLI, "nf-test.jar"), jarFinalPath)
 
     debug("Expose the tool by adding it to the PATH")
+
     addPath(paths)
+
+    // check if paths exist
+    for (const p of paths) {
+      if (await fileExists(p)) {
+        debug(`Path exists: ${p}`)
+      }
+    }
+    // show the contents of the ~/.nf-test directory
+    let files
+    try {
+      files = await fs.readdir(path.join(os.homedir(), ".nf-test"))
+    } catch (e) {
+      debug(e)
+    }
+    debug(`Files in ~/.nf-test: ${files}`)
 
     await saveCache(paths, key)
     debug(`Cache saved with key: ${key}`)
+
+    return
     // // test the cache
     // removePath(binFilePath)
     // removePath(jarFinalPath)

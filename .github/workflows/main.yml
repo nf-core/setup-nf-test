@@ -1,5 +1,5 @@
 on: [push]
-
+name: test nf-test installation
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -29,5 +29,7 @@ jobs:
         uses: ./
         with:
           version: "${{ matrix.NF-TEST_VER }}"
+      - name: show PATH
+        run: echo $PATH
       - name: Smoke test
         run: nf-test version
