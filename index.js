@@ -55,6 +55,10 @@ async function setup() {
     const jarFinalPath = path.join(os.homedir(), ".nf-test", "nf-test.jar")
     await fs.rename(path.join(pathToCLI, "nf-test.jar"), jarFinalPath)
 
+    debug("Move the binary to ~/.nf-test/nf-test")
+    const binFinalFilePath = path.join(os.homedir(), ".nf-test", "nf-test")
+    await fs.rename(binFilePath, binFinalFilePath)
+
     debug("Expose the tool by adding it to the PATH")
 
     addPath(paths)
