@@ -76,7 +76,8 @@ async function setup() {
     debug("Cache the jar")
     await cacheFile(jarFinalPath, "nf-test.jar", "nf-test.jar", version)
 
-    debug("current Path:" + process.env.PATH)
+    debug("Cached files:")
+    debug(cachedFiles)
   } catch (e) {
     setFailed(e)
   }
