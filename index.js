@@ -77,6 +77,7 @@ async function setup() {
     await cacheFile(jarFinalPath, "nf-test.jar", "nf-test.jar", version)
 
     debug("Cached files:")
+    cachedFiles = await fs.readdir(process.env.RUNNER_TOOL_CACHE || "")
     debug(cachedFiles)
   } catch (e) {
     setFailed(e)
