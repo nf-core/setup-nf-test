@@ -68,7 +68,16 @@ async function setup() {
     }
 
     debug("Expose the tool by adding it to the PATH")
-    addPath(paths[0])
+    addPath(path.dirname(paths[0]))
+
+    // list the files in the directory
+    let files
+    try {
+      files = await fs.readdir(path.dirname(paths[0]))
+      debug(files)
+    } catch (e) {
+      debug(e)
+    }
 
     // await saveCache(paths, key)
     // debug(`Cache saved with key: ${key}`)
