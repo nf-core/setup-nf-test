@@ -9,24 +9,25 @@ const {
   extractZip,
   cacheFile
 } = require("@actions/tool-cache")
+const { saveCache, restoreCache } = require("@actions/cache")
 const { getDownloadObject } = require("./lib/utils")
 
 async function setup() {
   try {
     const version = getInput("version")
 
-    // list cached files
-    let cachedFiles = await fs.readdir(process.env.RUNNER_TOOL_CACHE || "")
-    const toolPath = find("nf-test", version)
-    const jarPath = find("nf-test.jar", version)
-    if (toolPath !== "") {
-      debug(`nf-test found in cache ${toolPath}`)
-      addPath(toolPath)
-      addPath(jarPath)
+    const paths = [
+      path.join(os.homedir(), ".nf-test", "nf-test.jar"),
+      path.join(os.homedir(), ".nf-test", "nf-test")
+    ]
+    const key = "nf-test-" + version
+    const restoreKey = await restoreCache(paths, key)
+    if (restoreKey) {
+      debug(`Cache restored from key: ${restoreKey}`)
+      addPath(path.join(os.homedir(), ".nf-test", "nf-test"))
+      addPath(path.join(os.homedir(), ".nf-test", "nf-test.jar"))
       return
     }
-    debug("Cached files:")
-    debug(cachedFiles)
     debug(`no version of nf-test matching "${version}" is installed`)
     const download = getDownloadObject(version)
     const pathToTarball = await downloadTool(download.url)
@@ -53,19 +54,6 @@ async function setup() {
       setFailed("nf-test does not exist")
     }
 
-    debug("Expose the tool by adding it to the PATH")
-    const [cachedCLIPath, cachedJarPath] = await Promise.all([
-      cacheFile(binFilePath, "nf-test", "nf-test", version),
-      cacheFile(
-        path.join(pathToCLI, "nf-test.jar"),
-        "nf-test.jar",
-        "nf-test.jar",
-        version
-      )
-    ])
-    addPath(cachedCLIPath)
-    addPath(cachedJarPath)
-
     debug("Make ~/.nf-test")
     await fs.mkdir(path.join(os.homedir(), ".nf-test"))
 
@@ -73,12 +61,21 @@ async function setup() {
     const jarFinalPath = path.join(os.homedir(), ".nf-test", "nf-test.jar")
     await fs.rename(path.join(pathToCLI, "nf-test.jar"), jarFinalPath)
 
-    debug("Cache the jar")
-    await cacheFile(jarFinalPath, "nf-test.jar", "nf-test.jar", version)
+    debug("Expose the tool by adding it to the PATH")
+    addPath(paths)
 
-    debug("Cached files:")
-    cachedFiles = await fs.readdir(process.env.RUNNER_TOOL_CACHE || "")
-    debug(cachedFiles)
+    await saveCache(paths, key)
+    debug(`Cache saved with key: ${key}`)
+    // // test the cache
+    // removePath(binFilePath)
+    // removePath(jarFinalPath)
+    // const testKey = await restoreCache(paths, key)
+    // if (testKey) {
+    //   debug(`Cache restored from key: ${testKey}`)
+    //   addPath(paths)
+    // } else {
+    //   debug(`Cache not restored from key: ${key}`)
+    // }
   } catch (e) {
     setFailed(e)
   }

@@ -17,6 +17,7 @@
     "@vercel/ncc": "^0.38.1"
   },
   "devDependencies": {
+    "@actions/cache": "^3.2.4",
     "husky": "^9.0.11",
     "lint-staged": "^15.2.2",
     "prettier": "^3.2.5"
