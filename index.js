@@ -52,10 +52,10 @@ async function setup() {
     debug(paths)
 
     debug("Move the binary to ~/.nf-test/nf-test " + paths[0])
-    await fs.rename(binFilePath, path[0])
+    await fs.rename(binFilePath, paths[0])
 
     debug("Move the jar to ~/.nf-test/nf-test.jar")
-    await fs.rename(path.join(pathToCLI, "nf-test.jar"), path[1])
+    await fs.rename(path.join(pathToCLI, "nf-test.jar"), paths[1])
 
     if (await fileExists(path[0])) {
       debug("nf-test exists")
