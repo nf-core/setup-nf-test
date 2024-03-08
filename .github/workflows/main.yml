@@ -1,23 +1,9 @@
 on: [push]
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    name: build action script
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-      - name: Install dependencies
-        run: npm install
-      - name: Build
-        run: npm run build
   test:
     runs-on: ubuntu-latest
     name: A test to install nf-test
-    needs: build
     strategy:
       matrix:
         NF-TEST_VER:
@@ -25,6 +11,14 @@ jobs:
           - "0.8.0"
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci
+      - name: Build
+        run: npm run build
       - uses: actions/setup-java@v4
         with:
           distribution: "temurin"
