@@ -3,9 +3,12 @@ description: "Install nf-test and add it to the PATH"
 author: "nf-core"
 inputs:
   version:
-    description: "The nf-test version to download (if necessary) and use. Example: 0.7.0. Installs latest by default"
+    description: "The nf-test version to download (if necessary) and use. Example: 0.8.0. Installs latest by default"
     required: true
     default: 0.8.4 # latest
 runs:
   using: "node20"
   main: "dist/index.js"
+branding:
+  icon: "navigation"
+  color: "green"

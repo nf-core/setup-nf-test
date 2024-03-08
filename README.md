@@ -34,4 +34,4 @@ The actions supports the following inputs:
 
 ## License
 
-[MIT](LICENSE).t
+[MIT](LICENSE)
