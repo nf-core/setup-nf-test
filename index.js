@@ -34,7 +34,7 @@ async function setup() {
     const binFilePath = path.resolve(pathToCLI, download.binPath)
 
     debug("Make ~/.nf-test even if it already exists")
-    if (await fs.stat(path.join(os.homedir(), ".nf-test"))) {
+    if (fileExists(path.join(os.homedir(), ".nf-test"))) {
       debug("Directory ~/.nf-test already exists")
       await fs.rm(path.join(os.homedir(), ".nf-test"), {
         recursive: true,
@@ -65,15 +65,6 @@ async function setup() {
 async function fileExists(filePath) {
   try {
     await fs.access(filePath)
-    return true
-  } catch (err) {
-    return false
-  }
-}
-
-async function isExecutable(filePath) {
-  try {
-    await fs.access(filePath, fs.constants.X_OK)
     return true
   } catch (err) {
     return false
