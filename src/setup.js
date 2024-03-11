@@ -32,7 +32,14 @@ async function setup() {
 
     const binFilePath = path.resolve(pathToCLI, download.binPath)
 
-    debug("Make ~/.nf-test")
+    debug("Make ~/.nf-test even if it already exists")
+    if (fs.existsSync(path.join(os.homedir(), ".nf-test"))) {
+      debug("Directory ~/.nf-test already exists")
+      await fs.rm(path.join(os.homedir(), ".nf-test"), {
+        recursive: true,
+        force: true
+      })
+    }
     await fs.mkdir(path.join(os.homedir(), ".nf-test"))
     debug(paths)
 
