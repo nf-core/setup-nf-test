@@ -4,7 +4,6 @@ const path = require("path")
 const { getInput, debug, setFailed, addPath } = require("@actions/core")
 const { downloadTool, extractTar, extractZip } = require("@actions/tool-cache")
 const { saveCache, restoreCache } = require("@actions/cache")
-const { getDownloadObject } = require("./lib/utils")
 
 async function setup() {
   try {
@@ -55,21 +54,16 @@ async function setup() {
   }
 }
 
-async function fileExists(filePath) {
-  try {
-    await fs.access(filePath)
-    return true
-  } catch (err) {
-    return false
-  }
-}
-
-async function isExecutable(filePath) {
-  try {
-    await fs.access(filePath, fs.constants.X_OK)
-    return true
-  } catch (err) {
-    return false
+function getDownloadObject(version) {
+  const filename = `nf-test-${version}`
+  const extension = "tar.gz"
+  const binPath = "nf-test"
+  const jarPath = "nf-test.jar"
+  const url = `https://github.com/askimed/nf-test/releases/download/v${version}/${filename}.${extension}`
+  return {
+    url,
+    binPath,
+    jarPath
   }
 }
 
