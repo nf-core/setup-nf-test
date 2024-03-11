@@ -1,4 +1,11 @@
-on: [push]
+on:
+  # PRs and push to master
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
 name: test nf-test installation
 jobs:
   test:
