@@ -1,4 +1,4 @@
-const fs = require("fs").promises
+const fs = require('fs-extra').promises
 const os = require("os")
 const path = require("path")
 const { getInput, debug, setFailed, addPath } = require("@actions/core")
@@ -45,10 +45,18 @@ async function setup() {
     debug(paths)
 
     debug("Move the binary to ~/.nf-test/nf-test " + paths[0])
-    await fs.rename(binFilePath, paths[0])
+    try {
+      await fs.move(binFilePath, paths[0])
+    } catch (err) {
+      console.error(err)
+    }
 
     debug("Move the jar to ~/.nf-test/nf-test.jar")
-    await fs.rename(path.join(pathToCLI, "nf-test.jar"), paths[1])
+    try {
+      await fs.move(path.join(pathToCLI, "nf-test.jar"), paths[1])
+    } catch (err) {
+      console.error(err)
+    }
 
     debug("Expose the tool by adding it to the PATH")
     addPath(path.dirname(paths[0]))
