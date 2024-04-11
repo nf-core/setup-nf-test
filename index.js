@@ -1,4 +1,4 @@
-const fs = require("fs-extra").promises
+const fs = require("fs-extra")
 const os = require("os")
 const path = require("path")
 const { getInput, debug, setFailed, addPath } = require("@actions/core")

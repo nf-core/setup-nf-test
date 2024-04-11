@@ -6,7 +6,7 @@
       __unused_webpack_exports,
       __nccwpck_require__
     ) => {
-      const fs = __nccwpck_require__(5630).promises
+      const fs = __nccwpck_require__(5630)
       const os = __nccwpck_require__(2037)
       const path = __nccwpck_require__(1017)
       const { getInput, debug, setFailed, addPath } = __nccwpck_require__(2186)
