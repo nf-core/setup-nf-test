@@ -1,8 +1,7 @@
-const fs = require("fs").promises
+const fs = require("fs-extra").promises
 const os = require("os")
 const path = require("path")
 const { getInput, debug, setFailed, addPath } = require("@actions/core")
-const io = require("@actions/io")
 const { downloadTool, extractTar, extractZip } = require("@actions/tool-cache")
 const { saveCache, restoreCache } = require("@actions/cache")
 const { getDownloadObject } = require("./lib/utils")
@@ -47,14 +46,14 @@ async function setup() {
 
     debug("Move the binary to ~/.nf-test/nf-test " + paths[0])
     try {
-      await io.mv(binFilePath, paths[0])
+      await fs.move(binFilePath, paths[0])
     } catch (err) {
       console.error(err)
     }
 
     debug("Move the jar to ~/.nf-test/nf-test.jar")
     try {
-      await io.mv(path.join(pathToCLI, "nf-test.jar"), paths[1])
+      await fs.move(path.join(pathToCLI, "nf-test.jar"), paths[1])
     } catch (err) {
       console.error(err)
     }
