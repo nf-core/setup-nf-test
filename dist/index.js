@@ -9,7 +9,8 @@
       const fs = __nccwpck_require__(5630)
       const os = __nccwpck_require__(2037)
       const path = __nccwpck_require__(1017)
-      const { getInput, debug, setFailed, addPath } = __nccwpck_require__(2186)
+      const { getInput, debug, setFailed, addPath, error } =
+        __nccwpck_require__(2186)
       const { downloadTool, extractTar, extractZip } = __nccwpck_require__(7784)
       const { saveCache, restoreCache } = __nccwpck_require__(7799)
       const { getDownloadObject } = __nccwpck_require__(918)
@@ -58,14 +59,14 @@
           try {
             await fs.move(binFilePath, paths[0])
           } catch (err) {
-            console.error(err)
+            error(err)
           }
 
           debug("Move the jar to ~/.nf-test/nf-test.jar")
           try {
             await fs.move(path.join(pathToCLI, "nf-test.jar"), paths[1])
           } catch (err) {
-            console.error(err)
+            error(err)
           }
 
           debug("Expose the tool by adding it to the PATH")
@@ -96620,7 +96621,6 @@ ${pendingInterceptorsFormatter.format(pending)}
           assign,
           isFunction,
           ref
-
         ;(ref = __nccwpck_require__(8229)),
           (assign = ref.assign),
           (isFunction = ref.isFunction)
