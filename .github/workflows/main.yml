@@ -1,11 +1,11 @@
 on:
-  # PRs and push to master
+  # PRs and push to main
   push:
     branches:
-      - master
+      - main
   pull_request:
     branches:
-      - master
+      - main
 name: test nf-test installation
 jobs:
   test:
