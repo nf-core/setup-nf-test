@@ -14,8 +14,8 @@ jobs:
     strategy:
       matrix:
         NF-TEST_VER:
+          - "0.9.0"
           - "0.8.4"
-          - "0.8.0"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
