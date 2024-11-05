@@ -25,7 +25,7 @@ A specific version of `nf-test`:
 steps:
   - uses: nf-core/setup-nf-test@v1
     with:
-      version: 0.9.1
+      version: 0.9.2
       install-pdiff: true
 ```
 
@@ -33,7 +33,7 @@ steps:
 
 The actions supports the following inputs:
 
-- `version`: The version of `nf-test` to install, defaulting to `0.9.1`
+- `version`: The version of `nf-test` to install, defaulting to `0.9.2`
 - `install-pdiff`: A boolean to install the `pdiff` Python module and set environment variables `NFT_DIFF` and `NFT_DIFF_ARGS`
 
 ## License
