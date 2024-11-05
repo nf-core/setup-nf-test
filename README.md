@@ -15,6 +15,8 @@ Setup the `nf-test`:
 ```yaml
 steps:
   - uses: nf-core/setup-nf-test@v1
+    with:
+      install-pdiff: true
 ```
 
 A specific version of `nf-test`:
@@ -23,14 +25,16 @@ A specific version of `nf-test`:
 steps:
   - uses: nf-core/setup-nf-test@v1
     with:
-      version: 0.8.0
+      version: 0.9.2
+      install-pdiff: true
 ```
 
 ## Inputs
 
 The actions supports the following inputs:
 
-- `version`: The version of `nf-test` to install, defaulting to `0.8.4`
+- `version`: The version of `nf-test` to install, defaulting to `0.9.2`
+- `install-pdiff`: A boolean to install the `pdiff` Python module and set environment variables `NFT_DIFF` and `NFT_DIFF_ARGS`
 
 ## License
 

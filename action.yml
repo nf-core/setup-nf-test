@@ -6,6 +6,10 @@ inputs:
     description: "The nf-test version to download (if necessary) and use. Example: 0.8.0. Installs latest by default"
     required: false
     default: 0.8.4 # latest
+  install-pdiff:
+    description: "Install the pdiff Python module and set environment variables"
+    required: false
+    default: "false"
 runs:
   using: "node20"
   main: "dist/index.js"
