@@ -1,7 +1,7 @@
-const fs = require("fs").promises
+const fs = require("fs-extra")
 const os = require("os")
 const path = require("path")
-const { getInput, debug, setFailed, addPath } = require("@actions/core")
+const { getInput, debug, setFailed, addPath, error } = require("@actions/core")
 const { downloadTool, extractTar, extractZip } = require("@actions/tool-cache")
 const { saveCache, restoreCache } = require("@actions/cache")
 const { getDownloadObject } = require("./lib/utils")
@@ -45,10 +45,18 @@ async function setup() {
     debug(paths)
 
     debug("Move the binary to ~/.nf-test/nf-test " + paths[0])
-    await fs.rename(binFilePath, paths[0])
+    try {
+      await fs.move(binFilePath, paths[0])
+    } catch (err) {
+      error(err)
+    }
 
     debug("Move the jar to ~/.nf-test/nf-test.jar")
-    await fs.rename(path.join(pathToCLI, "nf-test.jar"), paths[1])
+    try {
+      await fs.move(path.join(pathToCLI, "nf-test.jar"), paths[1])
+    } catch (err) {
+      error(err)
+    }
 
     debug("Expose the tool by adding it to the PATH")
     addPath(path.dirname(paths[0]))
