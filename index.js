@@ -5,10 +5,12 @@ const { getInput, debug, setFailed, addPath } = require("@actions/core")
 const { downloadTool, extractTar, extractZip } = require("@actions/tool-cache")
 const { saveCache, restoreCache } = require("@actions/cache")
 const { getDownloadObject } = require("./lib/utils")
+const { exec } = require("@actions/exec")
 
 async function setup() {
   try {
     const version = getInput("version")
+    const installPdiff = getInput("install-pdiff") === "true"
 
     const paths = [
       path.join(os.homedir(), ".nf-test", "nf-test"),
@@ -52,6 +54,13 @@ async function setup() {
 
     debug("Expose the tool by adding it to the PATH")
     addPath(path.dirname(paths[0]))
+
+    if (installPdiff) {
+      debug("Installing pdiff and setting environment variables")
+      await exec("pip install pdiff")
+      process.env.NFT_DIFF = "pdiff"
+      process.env.NFT_DIFF_ARGS = "--line-numbers --expand-tabs=2"
+    }
 
     await saveCache(paths, key)
     debug(`Cache saved with key: ${key}`)
