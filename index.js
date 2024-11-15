@@ -11,32 +11,30 @@ async function setup() {
   try {
     const version = getInput("version")
     const installPdiff = getInput("install-pdiff") === "true"
-
     const paths = [
       path.join(os.homedir(), ".nf-test", "nf-test"),
       path.join(os.homedir(), ".nf-test", "nf-test.jar")
     ]
     const key = "nf-test-" + version
     const restoreKey = await restoreCache(paths, key)
+
     if (restoreKey) {
       debug(`Cache restored from key: ${restoreKey}`)
       addPath(path.dirname(paths[0]))
       return
     }
+
     debug(`no version of nf-test matching "${version}" is installed`)
     const download = getDownloadObject(version)
     const pathToTarball = await downloadTool(download.url)
-
     const extract = download.url.endsWith(".zip") ? extractZip : extractTar
     const pathToCLI = await extract(pathToTarball)
-
     debug(`Path to CLI: ${pathToCLI}`)
     debug(`Bin path: ${download.binPath}`)
-
     const binFilePath = path.resolve(pathToCLI, download.binPath)
 
     debug("Make ~/.nf-test even if it already exists")
-    if (fileExists(path.join(os.homedir(), ".nf-test"))) {
+    if (await fileExists(path.join(os.homedir(), ".nf-test"))) {
       debug("Directory ~/.nf-test already exists")
       await fs.rm(path.join(os.homedir(), ".nf-test"), {
         recursive: true,
@@ -44,8 +42,8 @@ async function setup() {
       })
     }
     await fs.mkdir(path.join(os.homedir(), ".nf-test"))
-    debug(paths)
 
+    debug(paths)
     debug("Move the binary to ~/.nf-test/nf-test " + paths[0])
     try {
       await fs.move(binFilePath, paths[0])
@@ -65,14 +63,13 @@ async function setup() {
 
     if (installPdiff) {
       debug("Installing pdiff and setting environment variables")
-      await exec("pip install pdiff")
+      await exec("python -m pip install pdiff")
       process.env.NFT_DIFF = "pdiff"
       process.env.NFT_DIFF_ARGS = "--line-numbers --expand-tabs=2"
     }
 
     await saveCache(paths, key)
     debug(`Cache saved with key: ${key}`)
-
     return
   } catch (e) {
     setFailed(e)
