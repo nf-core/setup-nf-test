@@ -64,6 +64,16 @@ async function setup() {
     if (installPdiff) {
       debug("Installing pdiff and setting environment variables")
       await exec("python -m pip install pdiff")
+
+      // Create a simple wrapper script in the same directory as nf-test
+      const pdiffWrapperPath = path.join(path.dirname(paths[0]), "pdiff")
+      await fs.writeFile(
+        pdiffWrapperPath,
+        `#!/bin/bash\npython -m pdiff "$@"\n`
+      )
+      await fs.chmod(pdiffWrapperPath, 0o755)
+      debug(`Created pdiff wrapper at ${pdiffWrapperPath}`)
+
       process.env.NFT_DIFF = "pdiff"
       process.env.NFT_DIFF_ARGS = "--line-numbers --expand-tabs=2"
     }
