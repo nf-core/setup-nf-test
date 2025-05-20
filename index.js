@@ -22,7 +22,7 @@ async function setup() {
       path.join(os.homedir(), ".nf-test", "nf-test"),
       path.join(os.homedir(), ".nf-test", "nf-test.jar")
     ]
-    const key = "nf-test-" + version
+    const key = "nf-test-" + version + "-install-pdiff-" + installPdiff
     const restoreKey = await restoreCache(paths, key)
 
     if (restoreKey) {
