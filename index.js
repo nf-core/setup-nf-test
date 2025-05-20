@@ -81,8 +81,23 @@ async function setup() {
       await fs.chmod(pdiffWrapperPath, 0o755)
       debug(`Created pdiff wrapper at ${pdiffWrapperPath}`)
 
+      // Set environment variables
       exportVariable("NFT_DIFF", "pdiff")
       exportVariable("NFT_DIFF_ARGS", "--line-numbers --expand-tabs=2")
+
+      // Add environment variables to GITHUB_ENV to make them available to the next steps
+      if (process.env.GITHUB_ENV) {
+        await fs.appendFile(process.env.GITHUB_ENV, `NFT_DIFF=pdiff\n`)
+        await fs.appendFile(
+          process.env.GITHUB_ENV,
+          `NFT_DIFF_ARGS=--line-numbers --expand-tabs=2\n`
+        )
+        debug("Added environment variables to GITHUB_ENV")
+      } else {
+        debug(
+          "GITHUB_ENV not available, environment variables might not persist"
+        )
+      }
     }
 
     await saveCache(paths, key)
