@@ -65,12 +65,6 @@ async function setup() {
     const key = `nf-test-${version}-install-pdiff-${installPdiff}`
     const restoreKey = await restoreCache(paths, key)
 
-    // Setup nf-test directory
-    if (await fileExists(nfTestDir)) {
-      await fs.rm(nfTestDir, { recursive: true, force: true })
-    }
-    await fs.mkdir(nfTestDir)
-
     if (!restoreKey) {
       // Download and extract nf-test
       const download = getDownloadObject(version)
@@ -105,15 +99,6 @@ async function setup() {
     }
   } catch (e) {
     setFailed(e)
-  }
-}
-
-async function fileExists(filePath) {
-  try {
-    await fs.access(filePath)
-    return true
-  } catch (err) {
-    return false
   }
 }
 
