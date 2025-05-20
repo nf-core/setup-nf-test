@@ -18,102 +18,87 @@ async function setup() {
   try {
     const version = getInput("version")
     const installPdiff = getInput("install-pdiff") === "true"
-    const paths = [
-      path.join(os.homedir(), ".nf-test", "nf-test"),
-      path.join(os.homedir(), ".nf-test", "nf-test.jar")
-    ]
-    const key = "nf-test-" + version + "-install-pdiff-" + installPdiff
-    const restoreKey = await restoreCache(paths, key)
+    const nfTestDir = path.join(os.homedir(), ".nf-test")
 
-    if (restoreKey) {
-      debug(`Cache restored from key: ${restoreKey}`)
-      addPath(path.dirname(paths[0]))
-      return
-    }
-
-    debug(`no version of nf-test matching "${version}" is installed`)
-    const download = getDownloadObject(version)
-    const pathToTarball = await downloadTool(download.url)
-    const extract = download.url.endsWith(".zip") ? extractZip : extractTar
-    const pathToCLI = await extract(pathToTarball)
-    debug(`Path to CLI: ${pathToCLI}`)
-    debug(`Bin path: ${download.binPath}`)
-    const binFilePath = path.resolve(pathToCLI, download.binPath)
-
-    debug("Make ~/.nf-test even if it already exists")
-    if (await fileExists(path.join(os.homedir(), ".nf-test"))) {
-      debug("Directory ~/.nf-test already exists")
-      await fs.rm(path.join(os.homedir(), ".nf-test"), {
-        recursive: true,
-        force: true
+    // Get pip's cache directory
+    let pipCacheDir = ""
+    try {
+      const output = await exec("python", ["-m", "pip", "cache", "dir"], {
+        silent: true,
+        listeners: {
+          stdout: data => {
+            pipCacheDir += data.toString()
+          }
+        }
       })
-    }
-    await fs.mkdir(path.join(os.homedir(), ".nf-test"))
-
-    debug(paths)
-    debug("Move the binary to ~/.nf-test/nf-test " + paths[0])
-    try {
-      await fs.move(binFilePath, paths[0])
+      pipCacheDir = pipCacheDir.trim()
+      debug(`Pip cache directory: ${pipCacheDir}`)
     } catch (err) {
-      error(err)
+      error(`Failed to get pip cache directory: ${err}`)
+      pipCacheDir = path.join(os.homedir(), ".cache", "pip")
     }
 
-    debug("Move the jar to ~/.nf-test/nf-test.jar")
-    try {
-      await fs.move(path.join(pathToCLI, "nf-test.jar"), paths[1])
-    } catch (err) {
-      error(err)
-    }
-
-    debug("Expose the tool by adding it to the PATH")
-    addPath(path.dirname(paths[0]))
+    // Setup paths to cache
+    const paths = [
+      path.join(nfTestDir, "nf-test"),
+      path.join(nfTestDir, "nf-test.jar")
+    ]
 
     if (installPdiff) {
-      debug("Installing pdiff and setting environment variables")
-      await exec("python -m pip install pdiff")
+      paths.push(path.join(nfTestDir, "pdiff"))
+      paths.push(pipCacheDir)
 
-      // Create a simple wrapper script in the same directory as nf-test
-      const pdiffWrapperPath = path.join(path.dirname(paths[0]), "pdiff")
+      // Set pdiff environment variables
+      exportVariable("NFT_DIFF", "pdiff")
+      exportVariable("NFT_DIFF_ARGS", "--line-numbers --expand-tabs=2")
+      if (process.env.GITHUB_ENV) {
+        fs.appendFileSync(process.env.GITHUB_ENV, `NFT_DIFF=pdiff\n`)
+        fs.appendFileSync(
+          process.env.GITHUB_ENV,
+          `NFT_DIFF_ARGS=--line-numbers --expand-tabs=2\n`
+        )
+        debug("Added environment variables to GITHUB_ENV")
+      }
+    }
+
+    // Try to restore from cache
+    const key = `nf-test-${version}-install-pdiff-${installPdiff}`
+    const restoreKey = await restoreCache(paths, key)
+
+    if (!restoreKey) {
+      // Download and extract nf-test
+      const download = getDownloadObject(version)
+      const pathToTarball = await downloadTool(download.url)
+      const extract = download.url.endsWith(".zip") ? extractZip : extractTar
+      const pathToCLI = await extract(pathToTarball)
+
+      // Move files to final location
+      await fs.move(path.resolve(pathToCLI, download.binPath), paths[0])
+      await fs.move(path.join(pathToCLI, "nf-test.jar"), paths[1])
+
+      // Save to cache
+      await saveCache(paths, key)
+      debug(`Cache saved with key: ${key}`)
+    }
+
+    // Add to PATH
+    addPath(nfTestDir)
+
+    // Install pdiff if requested
+    if (installPdiff) {
+      await exec("python", ["-m", "pip", "install", "pdiff"])
+
+      // Create pdiff wrapper script
+      const pdiffWrapperPath = path.join(nfTestDir, "pdiff")
       await fs.writeFile(
         pdiffWrapperPath,
         `#!/bin/bash\npython -m pdiff "$@"\n`
       )
       await fs.chmod(pdiffWrapperPath, 0o755)
       debug(`Created pdiff wrapper at ${pdiffWrapperPath}`)
-
-      // Set environment variables
-      exportVariable("NFT_DIFF", "pdiff")
-      exportVariable("NFT_DIFF_ARGS", "--line-numbers --expand-tabs=2")
-
-      // Add environment variables to GITHUB_ENV to make them available to the next steps
-      if (process.env.GITHUB_ENV) {
-        await fs.appendFile(process.env.GITHUB_ENV, `NFT_DIFF=pdiff\n`)
-        await fs.appendFile(
-          process.env.GITHUB_ENV,
-          `NFT_DIFF_ARGS=--line-numbers --expand-tabs=2\n`
-        )
-        debug("Added environment variables to GITHUB_ENV")
-      } else {
-        debug(
-          "GITHUB_ENV not available, environment variables might not persist"
-        )
-      }
     }
-
-    await saveCache(paths, key)
-    debug(`Cache saved with key: ${key}`)
-    return
   } catch (e) {
     setFailed(e)
-  }
-}
-
-async function fileExists(filePath) {
-  try {
-    await fs.access(filePath)
-    return true
-  } catch (err) {
-    return false
   }
 }
 
