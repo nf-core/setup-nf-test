@@ -1,7 +1,14 @@
 const fs = require("fs-extra")
 const os = require("os")
 const path = require("path")
-const { getInput, debug, setFailed, addPath, error } = require("@actions/core")
+const {
+  getInput,
+  debug,
+  setFailed,
+  addPath,
+  error,
+  exportVariable
+} = require("@actions/core")
 const { downloadTool, extractTar, extractZip } = require("@actions/tool-cache")
 const { saveCache, restoreCache } = require("@actions/cache")
 const { getDownloadObject } = require("./lib/utils")
@@ -74,8 +81,8 @@ async function setup() {
       await fs.chmod(pdiffWrapperPath, 0o755)
       debug(`Created pdiff wrapper at ${pdiffWrapperPath}`)
 
-      process.env.NFT_DIFF = "pdiff"
-      process.env.NFT_DIFF_ARGS = "--line-numbers --expand-tabs=2"
+      exportVariable("NFT_DIFF", "pdiff")
+      exportVariable("NFT_DIFF_ARGS", "--line-numbers --expand-tabs=2")
     }
 
     await saveCache(paths, key)
