@@ -33,7 +33,7 @@ steps:
 
 The actions supports the following inputs:
 
-- `version`: The version of `nf-test` to install, defaulting to `0.9.2`
+- `version`: The version of `nf-test` to install, defaulting to `0.9.3`
 - `install-pdiff`: A boolean to install the `pdiff` Python module and set environment variables `NFT_DIFF` and `NFT_DIFF_ARGS`
 
 ## License
