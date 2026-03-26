@@ -1,18 +1,18 @@
-const fs = require("fs-extra")
-const os = require("os")
-const path = require("path")
-const {
+import fs from "fs-extra"
+import os from "os"
+import path from "path"
+import {
   getInput,
   debug,
   setFailed,
   addPath,
   error,
   exportVariable
-} = require("@actions/core")
-const { downloadTool, extractTar, extractZip } = require("@actions/tool-cache")
-const { saveCache, restoreCache } = require("@actions/cache")
-const { getDownloadObject } = require("./lib/utils")
-const { exec } = require("@actions/exec")
+} from "@actions/core"
+import { downloadTool, extractTar, extractZip } from "@actions/tool-cache"
+import { saveCache, restoreCache } from "@actions/cache"
+import { getDownloadObject } from "./lib/utils.js"
+import { exec } from "@actions/exec"
 
 async function setup() {
   try {
@@ -102,8 +102,8 @@ async function setup() {
   }
 }
 
-module.exports = setup
+export default setup
 
-if (require.main === module) {
+if (process.argv[1] === new URL(import.meta.url).pathname) {
   setup()
 }
