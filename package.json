@@ -26,7 +26,7 @@
     "@actions/cache": "4.0.3",
     "husky": "9.1.7",
     "lint-staged": "16.0.0",
-    "prettier": "3.5.3"
+    "prettier": "3.8.1"
   },
   "lint-staged": {
     "*.{ts,js,yml,md,json}": "prettier --write"
