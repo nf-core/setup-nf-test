@@ -23,7 +23,7 @@
     "fs-extra": "^11.2.0"
   },
   "devDependencies": {
-    "@actions/cache": "4.0.3",
+    "@actions/cache": "6.0.0",
     "husky": "9.1.7",
     "lint-staged": "16.0.0",
     "prettier": "3.5.3"
