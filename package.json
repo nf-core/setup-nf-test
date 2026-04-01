@@ -19,7 +19,6 @@
     "@actions/cache": "^6.0.0",
     "@actions/core": "^3.0.0",
     "@actions/exec": "^3.0.0",
-    "@actions/github": "^9.0.0",
     "@actions/io": "^3.0.2",
     "@actions/tool-cache": "^4.0.0",
     "fs-extra": "^11.3.4"

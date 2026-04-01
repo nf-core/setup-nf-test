@@ -48573,7 +48573,7 @@ function extractZipWin(file, dest) {
     // build the powershell command
     const escapedFile = file.replace(/'/g, "''").replace(/"|\n|\r/g, "") // double-up single quotes, remove double quotes and newlines
     const escapedDest = dest.replace(/'/g, "''").replace(/"|\n|\r/g, "")
-    const pwshPath = yield which("pwsh", false)
+    const pwshPath = yield io.which("pwsh", false)
     //To match the file overwrite behavior on nix systems, we use the overwrite = true flag for ExtractToDirectory
     //and the -Force flag for Expand-Archive as a fallback
     if (pwshPath) {
@@ -48593,8 +48593,8 @@ function extractZipWin(file, dest) {
         "-Command",
         pwshCommand
       ]
-      core_debug(`Using pwsh at path: ${pwshPath}`)
-      yield exec_exec(`"${pwshPath}"`, args)
+      core.debug(`Using pwsh at path: ${pwshPath}`)
+      yield exec(`"${pwshPath}"`, args)
     } else {
       const powershellCommand = [
         `$ErrorActionPreference = 'Stop' ;`,
@@ -48612,21 +48612,21 @@ function extractZipWin(file, dest) {
         "-Command",
         powershellCommand
       ]
-      const powershellPath = yield which("powershell", true)
-      core_debug(`Using powershell at path: ${powershellPath}`)
-      yield exec_exec(`"${powershellPath}"`, args)
+      const powershellPath = yield io.which("powershell", true)
+      core.debug(`Using powershell at path: ${powershellPath}`)
+      yield exec(`"${powershellPath}"`, args)
     }
   })
 }
 function extractZipNix(file, dest) {
   return tool_cache_awaiter(this, void 0, void 0, function* () {
-    const unzipPath = yield which("unzip", true)
+    const unzipPath = yield io.which("unzip", true)
     const args = [file]
-    if (!isDebug()) {
+    if (!core.isDebug()) {
       args.unshift("-q")
     }
     args.unshift("-o") //overwrite with -o, otherwise a prompt is shown which freezes the run
-    yield exec_exec(`"${unzipPath}"`, args, { cwd: dest })
+    yield exec(`"${unzipPath}"`, args, { cwd: dest })
   })
 }
 /**
@@ -97904,22 +97904,8 @@ function saveCacheV2(paths_1, key_1, options_1) {
       return cacheId
     }
   )
-} // CONCATENATED MODULE: ./lib/utils.js
-//# sourceMappingURL=cache.js.map
-function getDownloadObject(version) {
-  const platform = external_os_namespaceObject.platform()
-  const filename = `nf-test-${version}`
-  const extension = "tar.gz"
-  const binPath = "nf-test"
-  const jarPath = "nf-test.jar"
-  const url = `https://github.com/askimed/nf-test/releases/download/v${version}/${filename}.${extension}`
-  return {
-    url,
-    binPath,
-    jarPath
-  }
 } // CONCATENATED MODULE: ./index.js
-
+//# sourceMappingURL=cache.js.map
 async function setup() {
   try {
     const version = getInput("version")
@@ -97964,14 +97950,6 @@ async function setup() {
       // Set pdiff environment variables
       exportVariable("NFT_DIFF", "pdiff")
       exportVariable("NFT_DIFF_ARGS", "--line-numbers --expand-tabs=2")
-      if (process.env.GITHUB_ENV) {
-        lib.appendFileSync(process.env.GITHUB_ENV, `NFT_DIFF=pdiff\n`)
-        lib.appendFileSync(
-          process.env.GITHUB_ENV,
-          `NFT_DIFF_ARGS=--line-numbers --expand-tabs=2\n`
-        )
-        core_debug("Added environment variables to GITHUB_ENV")
-      }
     }
 
     // Try to restore from cache
@@ -97980,16 +97958,12 @@ async function setup() {
 
     if (!restoreKey) {
       // Download and extract nf-test
-      const download = getDownloadObject(version)
-      const pathToTarball = await downloadTool(download.url)
-      const extract = download.url.endsWith(".zip") ? extractZip : extractTar
-      const pathToCLI = await extract(pathToTarball)
+      const url = `https://github.com/askimed/nf-test/releases/download/v${version}/nf-test-${version}.tar.gz`
+      const pathToTarball = await downloadTool(url)
+      const pathToCLI = await extractTar(pathToTarball)
 
       // Move files to final location
-      await lib.move(
-        external_path_.resolve(pathToCLI, download.binPath),
-        paths[0]
-      )
+      await lib.move(external_path_.resolve(pathToCLI, "nf-test"), paths[0])
       await lib.move(external_path_.join(pathToCLI, "nf-test.jar"), paths[1])
 
       // Save to cache
