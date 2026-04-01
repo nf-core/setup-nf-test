@@ -1,18 +1,17 @@
-const fs = require("fs-extra")
-const os = require("os")
-const path = require("path")
-const {
+import fs from "fs-extra"
+import os from "os"
+import path from "path"
+import {
   getInput,
   debug,
   setFailed,
   addPath,
   error,
   exportVariable
-} = require("@actions/core")
-const { downloadTool, extractTar, extractZip } = require("@actions/tool-cache")
-const { saveCache, restoreCache } = require("@actions/cache")
-const { getDownloadObject } = require("./lib/utils")
-const { exec } = require("@actions/exec")
+} from "@actions/core"
+import { downloadTool, extractTar } from "@actions/tool-cache"
+import { saveCache, restoreCache } from "@actions/cache"
+import { exec } from "@actions/exec"
 
 async function setup() {
   try {
@@ -51,14 +50,6 @@ async function setup() {
       // Set pdiff environment variables
       exportVariable("NFT_DIFF", "pdiff")
       exportVariable("NFT_DIFF_ARGS", "--line-numbers --expand-tabs=2")
-      if (process.env.GITHUB_ENV) {
-        fs.appendFileSync(process.env.GITHUB_ENV, `NFT_DIFF=pdiff\n`)
-        fs.appendFileSync(
-          process.env.GITHUB_ENV,
-          `NFT_DIFF_ARGS=--line-numbers --expand-tabs=2\n`
-        )
-        debug("Added environment variables to GITHUB_ENV")
-      }
     }
 
     // Try to restore from cache
@@ -67,13 +58,12 @@ async function setup() {
 
     if (!restoreKey) {
       // Download and extract nf-test
-      const download = getDownloadObject(version)
-      const pathToTarball = await downloadTool(download.url)
-      const extract = download.url.endsWith(".zip") ? extractZip : extractTar
-      const pathToCLI = await extract(pathToTarball)
+      const url = `https://github.com/askimed/nf-test/releases/download/v${version}/nf-test-${version}.tar.gz`
+      const pathToTarball = await downloadTool(url)
+      const pathToCLI = await extractTar(pathToTarball)
 
       // Move files to final location
-      await fs.move(path.resolve(pathToCLI, download.binPath), paths[0])
+      await fs.move(path.resolve(pathToCLI, "nf-test"), paths[0])
       await fs.move(path.join(pathToCLI, "nf-test.jar"), paths[1])
 
       // Save to cache
@@ -102,8 +92,8 @@ async function setup() {
   }
 }
 
-module.exports = setup
+export default setup
 
-if (require.main === module) {
+if (process.argv[1] === new URL(import.meta.url).pathname) {
   setup()
 }
