@@ -32,7 +32,7 @@ jobs:
         with:
           distribution: "temurin"
           java-version: "17"
-      - uses: nf-core/setup-nextflow@561fcfc7146dcb12e3871909b635ab092a781f34 # v2.0.0
+      - uses: nf-core/setup-nextflow@b4ec1bc7c16a94435159de94a05253542fddf6ef # v3.0.0
 
       - name: nf-test install action step
         uses: ./
