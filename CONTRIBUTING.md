@@ -6,25 +6,25 @@ Here are the steps to publish a new release.
 ## Publishing a New Release
 
 1. **Ensure All Changes are Committed:**
-
-   - Make sure all your changes are committed and pushed to the `master` branch.
+   - Make sure all your changes are committed and pushed to the `main` branch.
 
 2. **Update Version:**
-
    - Update the version number in the `package.json` file to reflect the new
-     release version.
+     release version and commit the change.
 
-3. **Create a New Release:**
+3. **Run the Release Script:**
+   - From the repository root, run:
 
-   - Go to the [Releases](https://github.com/nf-core/setup-nf-test/releases)
-     page of the repository.
-   - Click on "Draft a new release".
-   - Set the tag version to the new version number (e.g., `v0.2.0`).
-   - Set the release title to the same version number.
-   - Add a description of the changes in this release.
+     ```bash
+     script/release
+     ```
+
+   - The script will prompt you for the new version tag (e.g., `v1.3.0`),
+     confirm the `package.json` version, create an annotated semver tag, update
+     the major version tag (e.g., `v1`), and push everything to remote.
+   - On a major version bump it will also create and push a `releases/vX` branch.
 
 4. **Trigger the Publish Workflow:**
-
    - The `.github/workflows/publish.yml` workflow will automatically run when a
      release is published. This workflow builds the project and tags the release.
 
