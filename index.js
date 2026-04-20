@@ -43,11 +43,13 @@ async function setup() {
       path.join(nfTestDir, "nf-test.jar")
     ]
 
+    exportVariable("NFT_DIFF", "diff")
+    exportVariable("NFT_DIFF_ARGS", "--unified --color=always")
+
     if (installPdiff) {
       paths.push(path.join(nfTestDir, "pdiff"))
       paths.push(pipCacheDir)
 
-      // Set pdiff environment variables
       exportVariable("NFT_DIFF", "pdiff")
       exportVariable("NFT_DIFF_ARGS", "--line-numbers --expand-tabs=2")
     }
@@ -57,16 +59,12 @@ async function setup() {
     const restoreKey = await restoreCache(paths, key)
 
     if (!restoreKey) {
-      // Download and extract nf-test
-      const url = `https://github.com/askimed/nf-test/releases/download/v${version}/nf-test-${version}.tar.gz`
-      const pathToTarball = await downloadTool(url)
+      const nfTestUrl = `https://github.com/askimed/nf-test/releases/download/v${version}/nf-test-${version}.tar.gz`
+      const pathToTarball = await downloadTool(nfTestUrl)
       const pathToCLI = await extractTar(pathToTarball)
-
-      // Move files to final location
       await fs.move(path.resolve(pathToCLI, "nf-test"), paths[0])
       await fs.move(path.join(pathToCLI, "nf-test.jar"), paths[1])
 
-      // Save to cache
       await saveCache(paths, key)
       debug(`Cache saved with key: ${key}`)
     }
@@ -74,11 +72,10 @@ async function setup() {
     // Add to PATH
     addPath(nfTestDir)
 
-    // Install pdiff if requested
+    // Install pdiff if requested (not cached — pip handles its own caching)
     if (installPdiff) {
       await exec("python", ["-m", "pip", "install", "pdiff"])
 
-      // Create pdiff wrapper script
       const pdiffWrapperPath = path.join(nfTestDir, "pdiff")
       await fs.writeFile(
         pdiffWrapperPath,

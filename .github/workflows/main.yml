@@ -41,3 +41,5 @@ jobs:
           install-pdiff: "${{ matrix.with-pdiff }}"
       - name: Smoke test
         run: nf-test version
+      - name: Show diff viewer output (snapshot mismatch)
+        run: nf-test test tests/hello.nf.test || true
