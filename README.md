@@ -29,12 +29,22 @@ steps:
       install-pdiff: true
 ```
 
+With character-level diff highlighting:
+
+```yaml
+steps:
+  - uses: nf-core/setup-nf-test@v1
+    with:
+      install-fast-diff: true
+```
+
 ## Inputs
 
 The actions supports the following inputs:
 
 - `version`: The version of `nf-test` to install, defaulting to `0.9.3`
 - `install-pdiff`: A boolean to install the `pdiff` Python module and set environment variables `NFT_DIFF` and `NFT_DIFF_ARGS`
+- `install-fast-diff`: A boolean to enable character-level diff highlighting using `fast-diff`, highlighting characters that changed within each line (e.g. just the differing SHA hash).
 
 ## License
 
