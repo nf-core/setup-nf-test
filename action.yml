@@ -10,6 +10,10 @@ inputs:
     description: "Install the pdiff Python module and set environment variables"
     required: false
     default: "false"
+  install-fast-diff:
+    description: "Use fast-diff for character-level diff highlighting and set environment variables"
+    required: false
+    default: "false"
 runs:
   using: "node24"
   main: "dist/index.js"

@@ -99139,40 +99139,38 @@ async function setup() {
   try {
     const version = getInput("version")
     const installPdiff = getInput("install-pdiff") === "true"
+    const installFastDiff = getInput("install-fast-diff") === "true"
     const nfTestDir = external_path_.join(
       external_os_namespaceObject.homedir(),
       ".nf-test"
     )
 
-    // Get pip's cache directory
-    let pipCacheDir = ""
-    try {
-      await exec_exec("python", ["-m", "pip", "cache", "dir"], {
-        silent: true,
-        listeners: {
-          stdout: data => {
-            pipCacheDir += data.toString()
-          }
-        }
-      })
-      pipCacheDir = pipCacheDir.trim()
-      core_debug(`Pip cache directory: ${pipCacheDir}`)
-    } catch (err) {
-      core_error(`Failed to get pip cache directory: ${err}`)
-      pipCacheDir = external_path_.join(
-        external_os_namespaceObject.homedir(),
-        ".cache",
-        "pip"
-      )
-    }
-
-    // Setup paths to cache
     const paths = [
       external_path_.join(nfTestDir, "nf-test"),
       external_path_.join(nfTestDir, "nf-test.jar")
     ]
 
     if (installPdiff) {
+      let pipCacheDir = ""
+      try {
+        await exec_exec("python", ["-m", "pip", "cache", "dir"], {
+          silent: true,
+          listeners: {
+            stdout: data => {
+              pipCacheDir += data.toString()
+            }
+          }
+        })
+        pipCacheDir = pipCacheDir.trim()
+        core_debug(`Pip cache directory: ${pipCacheDir}`)
+      } catch (err) {
+        core_error(`Failed to get pip cache directory: ${err}`)
+        pipCacheDir = external_path_.join(
+          external_os_namespaceObject.homedir(),
+          ".cache",
+          "pip"
+        )
+      }
       paths.push(external_path_.join(nfTestDir, "pdiff"))
       paths.push(pipCacheDir)
     }
@@ -99191,7 +99189,6 @@ async function setup() {
       core_debug(`Cache saved with key: ${key}`)
     }
 
-    // Add to PATH
     addPath(nfTestDir)
 
     if (installPdiff) {
@@ -99207,13 +99204,17 @@ async function setup() {
 
       exportVariable("NFT_DIFF", "pdiff")
       exportVariable("NFT_DIFF_ARGS", "--line-numbers --expand-tabs=2")
-    } else {
+    }
+
+    if (installFastDiff) {
       const wrapperPath = external_path_.join(nfTestDir, "nft-diff")
       await lib.writeFile(
         wrapperPath,
         `#!/bin/bash\ndiff --unified "\${@: -2}" | node "${process.argv[1]}" --diff-highlight\n`
       )
       await lib.chmod(wrapperPath, 0o755)
+      core_debug(`Created nft-diff wrapper at ${wrapperPath}`)
+
       exportVariable("NFT_DIFF", "nft-diff")
     }
   } catch (e) {
