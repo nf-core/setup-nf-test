@@ -77,33 +77,31 @@ async function setup() {
   try {
     const version = getInput("version")
     const installPdiff = getInput("install-pdiff") === "true"
+    const installFastDiff = getInput("install-fast-diff") === "true"
     const nfTestDir = path.join(os.homedir(), ".nf-test")
 
-    // Get pip's cache directory
-    let pipCacheDir = ""
-    try {
-      await exec("python", ["-m", "pip", "cache", "dir"], {
-        silent: true,
-        listeners: {
-          stdout: data => {
-            pipCacheDir += data.toString()
-          }
-        }
-      })
-      pipCacheDir = pipCacheDir.trim()
-      debug(`Pip cache directory: ${pipCacheDir}`)
-    } catch (err) {
-      error(`Failed to get pip cache directory: ${err}`)
-      pipCacheDir = path.join(os.homedir(), ".cache", "pip")
-    }
-
-    // Setup paths to cache
     const paths = [
       path.join(nfTestDir, "nf-test"),
       path.join(nfTestDir, "nf-test.jar")
     ]
 
     if (installPdiff) {
+      let pipCacheDir = ""
+      try {
+        await exec("python", ["-m", "pip", "cache", "dir"], {
+          silent: true,
+          listeners: {
+            stdout: data => {
+              pipCacheDir += data.toString()
+            }
+          }
+        })
+        pipCacheDir = pipCacheDir.trim()
+        debug(`Pip cache directory: ${pipCacheDir}`)
+      } catch (err) {
+        error(`Failed to get pip cache directory: ${err}`)
+        pipCacheDir = path.join(os.homedir(), ".cache", "pip")
+      }
       paths.push(path.join(nfTestDir, "pdiff"))
       paths.push(pipCacheDir)
     }
@@ -122,7 +120,6 @@ async function setup() {
       debug(`Cache saved with key: ${key}`)
     }
 
-    // Add to PATH
     addPath(nfTestDir)
 
     if (installPdiff) {
@@ -138,13 +135,17 @@ async function setup() {
 
       exportVariable("NFT_DIFF", "pdiff")
       exportVariable("NFT_DIFF_ARGS", "--line-numbers --expand-tabs=2")
-    } else {
+    }
+
+    if (installFastDiff) {
       const wrapperPath = path.join(nfTestDir, "nft-diff")
       await fs.writeFile(
         wrapperPath,
         `#!/bin/bash\ndiff --unified "\${@: -2}" | node "${process.argv[1]}" --diff-highlight\n`
       )
       await fs.chmod(wrapperPath, 0o755)
+      debug(`Created nft-diff wrapper at ${wrapperPath}`)
+
       exportVariable("NFT_DIFF", "nft-diff")
     }
   } catch (e) {
