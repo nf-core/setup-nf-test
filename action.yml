@@ -10,10 +10,6 @@ inputs:
     description: "Install the pdiff Python module and set environment variables"
     required: false
     default: "false"
-  install-delta:
-    description: "Install git-delta for character-level intra-line diff highlighting"
-    required: false
-    default: "false"
 runs:
   using: "node24"
   main: "dist/index.js"
