@@ -41,19 +41,5 @@ jobs:
           install-pdiff: "${{ matrix.with-pdiff }}"
       - name: Smoke test
         run: nf-test version
-      - name: Debug diff-highlight paths
-        run: |
-          echo "=== which diff-highlight ==="
-          which diff-highlight || echo "not in PATH"
-          echo "=== known paths ==="
-          for p in /usr/share/git-core/contrib/diff-highlight/diff-highlight \
-                   /usr/lib/git-core/diff-highlight \
-                   /usr/share/doc/git/contrib/diff-highlight/diff-highlight; do
-            [ -f "$p" ] && echo "FOUND: $p" || echo "missing: $p"
-          done
-          echo "=== find any diff-highlight ==="
-          find /usr /opt -name "diff-highlight" 2>/dev/null || true
-          echo "=== nft-diff wrapper ==="
-          cat ~/.nf-test/nft-diff || echo "no wrapper"
       - name: Show diff viewer output (snapshot mismatch)
         run: nf-test test tests/hello.nf.test || true
