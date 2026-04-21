@@ -13,41 +13,16 @@ import { downloadTool, extractTar } from "@actions/tool-cache"
 import { saveCache, restoreCache } from "@actions/cache"
 import { exec } from "@actions/exec"
 
-async function getDeltaVersion() {
-  const response = await fetch(
-    "https://api.github.com/repos/dandavison/delta/releases/latest",
-    { headers: { Accept: "application/vnd.github+json" } }
-  )
-  if (!response.ok)
-    throw new Error(`Failed to fetch delta release: ${response.status}`)
-  const { tag_name } = await response.json()
-  return tag_name
-}
-
-function getDeltaAsset(version) {
-  const archMap = { x64: "x86_64", arm64: "aarch64" }
-  const platformMap = { linux: "unknown-linux-gnu", darwin: "apple-darwin" }
-  const archStr = archMap[os.arch()] ?? os.arch()
-  const platformStr = platformMap[os.platform()]
-  if (!platformStr) throw new Error(`Unsupported platform: ${os.platform()}`)
-  const name = `delta-${version}-${archStr}-${platformStr}`
-  return {
-    url: `https://github.com/dandavison/delta/releases/download/${version}/${name}.tar.gz`,
-    binary: `${name}/delta`
-  }
-}
-
 async function setup() {
   try {
     const version = getInput("version")
     const installPdiff = getInput("install-pdiff") === "true"
-    const installDelta = getInput("install-delta") === "true"
     const nfTestDir = path.join(os.homedir(), ".nf-test")
 
     // Get pip's cache directory
     let pipCacheDir = ""
     try {
-      const output = await exec("python", ["-m", "pip", "cache", "dir"], {
+      await exec("python", ["-m", "pip", "cache", "dir"], {
         silent: true,
         listeners: {
           stdout: data => {
@@ -68,25 +43,12 @@ async function setup() {
       path.join(nfTestDir, "nf-test.jar")
     ]
 
-    exportVariable("NFT_DIFF", "diff")
-    exportVariable("NFT_DIFF_ARGS", "--unified --color=always")
-
-    let deltaVersion = ""
-    if (installDelta) {
-      deltaVersion = await getDeltaVersion()
-      paths.push(path.join(nfTestDir, "delta"))
-      exportVariable("NFT_DIFF", "delta")
-      exportVariable("NFT_DIFF_ARGS", "--no-gitconfig --diff-highlight")
-    }
-
     if (installPdiff) {
       paths.push(path.join(nfTestDir, "pdiff"))
       paths.push(pipCacheDir)
-      exportVariable("NFT_DIFF", "pdiff")
-      exportVariable("NFT_DIFF_ARGS", "--line-numbers --expand-tabs=2")
     }
 
-    const key = `nf-test-${version}-install-pdiff-${installPdiff}-install-delta-${deltaVersion}`
+    const key = `nf-test-${version}-install-pdiff-${installPdiff}`
     const restoreKey = await restoreCache(paths, key)
 
     if (!restoreKey) {
@@ -96,18 +58,6 @@ async function setup() {
       await fs.move(path.resolve(pathToCLI, "nf-test"), paths[0])
       await fs.move(path.join(pathToCLI, "nf-test.jar"), paths[1])
 
-      if (installDelta) {
-        const { url, binary } = getDeltaAsset(deltaVersion)
-        const tarball = await downloadTool(url)
-        const extracted = await extractTar(tarball)
-        await fs.move(
-          path.join(extracted, binary),
-          path.join(nfTestDir, "delta")
-        )
-        await fs.chmod(path.join(nfTestDir, "delta"), 0o755)
-        debug(`Installed delta ${deltaVersion}`)
-      }
-
       await saveCache(paths, key)
       debug(`Cache saved with key: ${key}`)
     }
@@ -115,7 +65,6 @@ async function setup() {
     // Add to PATH
     addPath(nfTestDir)
 
-    // Install pdiff if requested (not cached — pip handles its own caching)
     if (installPdiff) {
       await exec("python", ["-m", "pip", "install", "pdiff"])
 
@@ -126,6 +75,27 @@ async function setup() {
       )
       await fs.chmod(pdiffWrapperPath, 0o755)
       debug(`Created pdiff wrapper at ${pdiffWrapperPath}`)
+
+      exportVariable("NFT_DIFF", "pdiff")
+      exportVariable("NFT_DIFF_ARGS", "--line-numbers --expand-tabs=2")
+    } else {
+      const wrapperPath = path.join(nfTestDir, "nft-diff")
+      await fs.writeFile(
+        wrapperPath,
+        [
+          "#!/bin/bash",
+          'dh="$(git --exec-path 2>/dev/null)/diff-highlight"',
+          '[ ! -f "$dh" ] && dh="$(command -v diff-highlight 2>/dev/null)"',
+          'if [ -f "$dh" ]; then',
+          `  diff --unified "\${@: -2}" | "$dh"`,
+          "  exit $?",
+          "fi",
+          `diff --unified --color=always "\${@: -2}"`,
+          ""
+        ].join("\n")
+      )
+      await fs.chmod(wrapperPath, 0o755)
+      exportVariable("NFT_DIFF", "nft-diff")
     }
   } catch (e) {
     setFailed(e)
