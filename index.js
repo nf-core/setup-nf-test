@@ -1,6 +1,7 @@
 import fs from "fs-extra"
 import os from "os"
 import path from "path"
+import readline from "readline"
 import {
   getInput,
   debug,
@@ -12,6 +13,65 @@ import {
 import { downloadTool, extractTar } from "@actions/tool-cache"
 import { saveCache, restoreCache } from "@actions/cache"
 import { exec } from "@actions/exec"
+import diff from "fast-diff"
+
+const RED = "\x1b[31m",
+  GREEN = "\x1b[32m"
+const RED_HL = "\x1b[41;30m",
+  GREEN_HL = "\x1b[42;30m",
+  RESET = "\x1b[m"
+
+async function runDiffHighlight() {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    crlfDelay: Infinity
+  })
+  let olds = [],
+    news = []
+
+  function flush() {
+    if (olds.length === 1 && news.length === 1) {
+      const oldText = olds[0].slice(1),
+        newText = news[0].slice(1)
+      const changes = diff(oldText, newText)
+      let oldOut = RED + "-",
+        newOut = GREEN + "+"
+      for (const [op, text] of changes) {
+        if (op === -1) oldOut += RED_HL + text + RED
+        else if (op === 1) newOut += GREEN_HL + text + GREEN
+        else {
+          oldOut += text
+          newOut += text
+        }
+      }
+      process.stdout.write(oldOut + RESET + "\n")
+      process.stdout.write(newOut + RESET + "\n")
+    } else {
+      olds.forEach(l => process.stdout.write(RED + l + RESET + "\n"))
+      news.forEach(l => process.stdout.write(GREEN + l + RESET + "\n"))
+    }
+    olds = []
+    news = []
+  }
+
+  rl.on("line", line => {
+    if (line.startsWith("-") && !line.startsWith("---")) {
+      if (news.length) flush()
+      olds.push(line)
+    } else if (line.startsWith("+") && !line.startsWith("+++")) {
+      news.push(line)
+    } else {
+      flush()
+      process.stdout.write(line + "\n")
+    }
+  })
+  await new Promise(resolve =>
+    rl.on("close", () => {
+      flush()
+      resolve()
+    })
+  )
+}
 
 async function setup() {
   try {
@@ -82,17 +142,7 @@ async function setup() {
       const wrapperPath = path.join(nfTestDir, "nft-diff")
       await fs.writeFile(
         wrapperPath,
-        [
-          "#!/bin/bash",
-          'dh="$(git --exec-path 2>/dev/null)/diff-highlight"',
-          '[ ! -f "$dh" ] && dh="$(command -v diff-highlight 2>/dev/null)"',
-          'if [ -f "$dh" ]; then',
-          `  diff --unified "\${@: -2}" | "$dh"`,
-          "  exit $?",
-          "fi",
-          `diff --unified --color=always "\${@: -2}"`,
-          ""
-        ].join("\n")
+        `#!/bin/bash\ndiff --unified "\${@: -2}" | node "${process.argv[1]}" --diff-highlight\n`
       )
       await fs.chmod(wrapperPath, 0o755)
       exportVariable("NFT_DIFF", "nft-diff")
@@ -104,6 +154,8 @@ async function setup() {
 
 export default setup
 
-if (process.argv[1] === new URL(import.meta.url).pathname) {
+if (process.argv.includes("--diff-highlight")) {
+  runDiffHighlight()
+} else if (process.argv[1] === new URL(import.meta.url).pathname) {
   setup()
 }

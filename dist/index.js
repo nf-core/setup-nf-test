@@ -6305,11 +6305,8 @@ import { createRequire as __WEBPACK_EXTERNAL_createRequire } from "module"
       return parts
     }
 
-    function expandTop(str, options) {
+    function expandTop(str) {
       if (!str) return []
-
-      options = options || {}
-      var max = options.max == null ? Infinity : options.max
 
       // I don't know why Bash 4.3 does this, but it does.
       // Anything starting with {} will have the first two bytes preserved
@@ -6321,7 +6318,7 @@ import { createRequire as __WEBPACK_EXTERNAL_createRequire } from "module"
         str = "\\{\\}" + str.substr(2)
       }
 
-      return expand(escapeBraces(str), max, true).map(unescapeBraces)
+      return expand(escapeBraces(str), true).map(unescapeBraces)
     }
 
     function identity(e) {
@@ -6342,7 +6339,7 @@ import { createRequire as __WEBPACK_EXTERNAL_createRequire } from "module"
       return i >= y
     }
 
-    function expand(str, max, isTop) {
+    function expand(str, isTop) {
       var expansions = []
 
       var m = balanced("{", "}", str)
@@ -6356,7 +6353,7 @@ import { createRequire as __WEBPACK_EXTERNAL_createRequire } from "module"
         // {a},b}
         if (m.post.match(/,(?!,).*\}/)) {
           str = m.pre + "{" + m.body + escClose + m.post
-          return expand(str, max, true)
+          return expand(str)
         }
         return [str]
       }
@@ -6368,9 +6365,9 @@ import { createRequire as __WEBPACK_EXTERNAL_createRequire } from "module"
         n = parseCommaParts(m.body)
         if (n.length === 1) {
           // x{{a,b}}y ==> x{a}y x{b}y
-          n = expand(n[0], max, false).map(embrace)
+          n = expand(n[0], false).map(embrace)
           if (n.length === 1) {
-            var post = m.post.length ? expand(m.post, max, false) : [""]
+            var post = m.post.length ? expand(m.post, false) : [""]
             return post.map(function (p) {
               return m.pre + n[0] + p
             })
@@ -6383,7 +6380,7 @@ import { createRequire as __WEBPACK_EXTERNAL_createRequire } from "module"
 
       // no need to expand pre, since it is guaranteed to be free of brace-sets
       var pre = m.pre
-      var post = m.post.length ? expand(m.post, max, false) : [""]
+      var post = m.post.length ? expand(m.post, false) : [""]
 
       var N
 
@@ -6422,12 +6419,12 @@ import { createRequire as __WEBPACK_EXTERNAL_createRequire } from "module"
         }
       } else {
         N = concatMap(n, function (el) {
-          return expand(el, max, false)
+          return expand(el, false)
         })
       }
 
       for (var j = 0; j < N.length; j++) {
-        for (var k = 0; k < post.length && expansions.length < max; k++) {
+        for (var k = 0; k < post.length; k++) {
           var expansion = pre + N[j] + post[k]
           if (!isTop || isSequence || expansion) expansions.push(expansion)
         }
@@ -7291,6 +7288,1172 @@ import { createRequire as __WEBPACK_EXTERNAL_createRequire } from "module"
       this.inspectOpts.colors = this.useColors
       return util.inspect(v, this.inspectOpts)
     }
+
+    /***/
+  },
+
+  /***/ 1363: /***/ module => {
+    /**
+     * This library modifies the diff-patch-match library by Neil Fraser
+     * by removing the patch and match functionality and certain advanced
+     * options in the diff function. The original license is as follows:
+     *
+     * ===
+     *
+     * Diff Match and Patch
+     *
+     * Copyright 2006 Google Inc.
+     * http://code.google.com/p/google-diff-match-patch/
+     *
+     * Licensed under the Apache License, Version 2.0 (the "License");
+     * you may not use this file except in compliance with the License.
+     * You may obtain a copy of the License at
+     *
+     *   http://www.apache.org/licenses/LICENSE-2.0
+     *
+     * Unless required by applicable law or agreed to in writing, software
+     * distributed under the License is distributed on an "AS IS" BASIS,
+     * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+     * See the License for the specific language governing permissions and
+     * limitations under the License.
+     */
+
+    /**
+     * The data structure representing a diff is an array of tuples:
+     * [[DIFF_DELETE, 'Hello'], [DIFF_INSERT, 'Goodbye'], [DIFF_EQUAL, ' world.']]
+     * which means: delete 'Hello', add 'Goodbye' and keep ' world.'
+     */
+    var DIFF_DELETE = -1
+    var DIFF_INSERT = 1
+    var DIFF_EQUAL = 0
+
+    /**
+     * Find the differences between two texts.  Simplifies the problem by stripping
+     * any common prefix or suffix off the texts before diffing.
+     * @param {string} text1 Old string to be diffed.
+     * @param {string} text2 New string to be diffed.
+     * @param {Int|Object} [cursor_pos] Edit position in text1 or object with more info
+     * @param {boolean} [cleanup] Apply semantic cleanup before returning.
+     * @return {Array} Array of diff tuples.
+     */
+    function diff_main(text1, text2, cursor_pos, cleanup, _fix_unicode) {
+      // Check for equality
+      if (text1 === text2) {
+        if (text1) {
+          return [[DIFF_EQUAL, text1]]
+        }
+        return []
+      }
+
+      if (cursor_pos != null) {
+        var editdiff = find_cursor_edit_diff(text1, text2, cursor_pos)
+        if (editdiff) {
+          return editdiff
+        }
+      }
+
+      // Trim off common prefix (speedup).
+      var commonlength = diff_commonPrefix(text1, text2)
+      var commonprefix = text1.substring(0, commonlength)
+      text1 = text1.substring(commonlength)
+      text2 = text2.substring(commonlength)
+
+      // Trim off common suffix (speedup).
+      commonlength = diff_commonSuffix(text1, text2)
+      var commonsuffix = text1.substring(text1.length - commonlength)
+      text1 = text1.substring(0, text1.length - commonlength)
+      text2 = text2.substring(0, text2.length - commonlength)
+
+      // Compute the diff on the middle block.
+      var diffs = diff_compute_(text1, text2)
+
+      // Restore the prefix and suffix.
+      if (commonprefix) {
+        diffs.unshift([DIFF_EQUAL, commonprefix])
+      }
+      if (commonsuffix) {
+        diffs.push([DIFF_EQUAL, commonsuffix])
+      }
+      diff_cleanupMerge(diffs, _fix_unicode)
+      if (cleanup) {
+        diff_cleanupSemantic(diffs)
+      }
+      return diffs
+    }
+
+    /**
+     * Find the differences between two texts.  Assumes that the texts do not
+     * have any common prefix or suffix.
+     * @param {string} text1 Old string to be diffed.
+     * @param {string} text2 New string to be diffed.
+     * @return {Array} Array of diff tuples.
+     */
+    function diff_compute_(text1, text2) {
+      var diffs
+
+      if (!text1) {
+        // Just add some text (speedup).
+        return [[DIFF_INSERT, text2]]
+      }
+
+      if (!text2) {
+        // Just delete some text (speedup).
+        return [[DIFF_DELETE, text1]]
+      }
+
+      var longtext = text1.length > text2.length ? text1 : text2
+      var shorttext = text1.length > text2.length ? text2 : text1
+      var i = longtext.indexOf(shorttext)
+      if (i !== -1) {
+        // Shorter text is inside the longer text (speedup).
+        diffs = [
+          [DIFF_INSERT, longtext.substring(0, i)],
+          [DIFF_EQUAL, shorttext],
+          [DIFF_INSERT, longtext.substring(i + shorttext.length)]
+        ]
+        // Swap insertions for deletions if diff is reversed.
+        if (text1.length > text2.length) {
+          diffs[0][0] = diffs[2][0] = DIFF_DELETE
+        }
+        return diffs
+      }
+
+      if (shorttext.length === 1) {
+        // Single character string.
+        // After the previous speedup, the character can't be an equality.
+        return [
+          [DIFF_DELETE, text1],
+          [DIFF_INSERT, text2]
+        ]
+      }
+
+      // Check to see if the problem can be split in two.
+      var hm = diff_halfMatch_(text1, text2)
+      if (hm) {
+        // A half-match was found, sort out the return data.
+        var text1_a = hm[0]
+        var text1_b = hm[1]
+        var text2_a = hm[2]
+        var text2_b = hm[3]
+        var mid_common = hm[4]
+        // Send both pairs off for separate processing.
+        var diffs_a = diff_main(text1_a, text2_a)
+        var diffs_b = diff_main(text1_b, text2_b)
+        // Merge the results.
+        return diffs_a.concat([[DIFF_EQUAL, mid_common]], diffs_b)
+      }
+
+      return diff_bisect_(text1, text2)
+    }
+
+    /**
+     * Find the 'middle snake' of a diff, split the problem in two
+     * and return the recursively constructed diff.
+     * See Myers 1986 paper: An O(ND) Difference Algorithm and Its Variations.
+     * @param {string} text1 Old string to be diffed.
+     * @param {string} text2 New string to be diffed.
+     * @return {Array} Array of diff tuples.
+     * @private
+     */
+    function diff_bisect_(text1, text2) {
+      // Cache the text lengths to prevent multiple calls.
+      var text1_length = text1.length
+      var text2_length = text2.length
+      var max_d = Math.ceil((text1_length + text2_length) / 2)
+      var v_offset = max_d
+      var v_length = 2 * max_d
+      var v1 = new Array(v_length)
+      var v2 = new Array(v_length)
+      // Setting all elements to -1 is faster in Chrome & Firefox than mixing
+      // integers and undefined.
+      for (var x = 0; x < v_length; x++) {
+        v1[x] = -1
+        v2[x] = -1
+      }
+      v1[v_offset + 1] = 0
+      v2[v_offset + 1] = 0
+      var delta = text1_length - text2_length
+      // If the total number of characters is odd, then the front path will collide
+      // with the reverse path.
+      var front = delta % 2 !== 0
+      // Offsets for start and end of k loop.
+      // Prevents mapping of space beyond the grid.
+      var k1start = 0
+      var k1end = 0
+      var k2start = 0
+      var k2end = 0
+      for (var d = 0; d < max_d; d++) {
+        // Walk the front path one step.
+        for (var k1 = -d + k1start; k1 <= d - k1end; k1 += 2) {
+          var k1_offset = v_offset + k1
+          var x1
+          if (
+            k1 === -d ||
+            (k1 !== d && v1[k1_offset - 1] < v1[k1_offset + 1])
+          ) {
+            x1 = v1[k1_offset + 1]
+          } else {
+            x1 = v1[k1_offset - 1] + 1
+          }
+          var y1 = x1 - k1
+          while (
+            x1 < text1_length &&
+            y1 < text2_length &&
+            text1.charAt(x1) === text2.charAt(y1)
+          ) {
+            x1++
+            y1++
+          }
+          v1[k1_offset] = x1
+          if (x1 > text1_length) {
+            // Ran off the right of the graph.
+            k1end += 2
+          } else if (y1 > text2_length) {
+            // Ran off the bottom of the graph.
+            k1start += 2
+          } else if (front) {
+            var k2_offset = v_offset + delta - k1
+            if (
+              k2_offset >= 0 &&
+              k2_offset < v_length &&
+              v2[k2_offset] !== -1
+            ) {
+              // Mirror x2 onto top-left coordinate system.
+              var x2 = text1_length - v2[k2_offset]
+              if (x1 >= x2) {
+                // Overlap detected.
+                return diff_bisectSplit_(text1, text2, x1, y1)
+              }
+            }
+          }
+        }
+
+        // Walk the reverse path one step.
+        for (var k2 = -d + k2start; k2 <= d - k2end; k2 += 2) {
+          var k2_offset = v_offset + k2
+          var x2
+          if (
+            k2 === -d ||
+            (k2 !== d && v2[k2_offset - 1] < v2[k2_offset + 1])
+          ) {
+            x2 = v2[k2_offset + 1]
+          } else {
+            x2 = v2[k2_offset - 1] + 1
+          }
+          var y2 = x2 - k2
+          while (
+            x2 < text1_length &&
+            y2 < text2_length &&
+            text1.charAt(text1_length - x2 - 1) ===
+              text2.charAt(text2_length - y2 - 1)
+          ) {
+            x2++
+            y2++
+          }
+          v2[k2_offset] = x2
+          if (x2 > text1_length) {
+            // Ran off the left of the graph.
+            k2end += 2
+          } else if (y2 > text2_length) {
+            // Ran off the top of the graph.
+            k2start += 2
+          } else if (!front) {
+            var k1_offset = v_offset + delta - k2
+            if (
+              k1_offset >= 0 &&
+              k1_offset < v_length &&
+              v1[k1_offset] !== -1
+            ) {
+              var x1 = v1[k1_offset]
+              var y1 = v_offset + x1 - k1_offset
+              // Mirror x2 onto top-left coordinate system.
+              x2 = text1_length - x2
+              if (x1 >= x2) {
+                // Overlap detected.
+                return diff_bisectSplit_(text1, text2, x1, y1)
+              }
+            }
+          }
+        }
+      }
+      // Diff took too long and hit the deadline or
+      // number of diffs equals number of characters, no commonality at all.
+      return [
+        [DIFF_DELETE, text1],
+        [DIFF_INSERT, text2]
+      ]
+    }
+
+    /**
+     * Given the location of the 'middle snake', split the diff in two parts
+     * and recurse.
+     * @param {string} text1 Old string to be diffed.
+     * @param {string} text2 New string to be diffed.
+     * @param {number} x Index of split point in text1.
+     * @param {number} y Index of split point in text2.
+     * @return {Array} Array of diff tuples.
+     */
+    function diff_bisectSplit_(text1, text2, x, y) {
+      var text1a = text1.substring(0, x)
+      var text2a = text2.substring(0, y)
+      var text1b = text1.substring(x)
+      var text2b = text2.substring(y)
+
+      // Compute both diffs serially.
+      var diffs = diff_main(text1a, text2a)
+      var diffsb = diff_main(text1b, text2b)
+
+      return diffs.concat(diffsb)
+    }
+
+    /**
+     * Determine the common prefix of two strings.
+     * @param {string} text1 First string.
+     * @param {string} text2 Second string.
+     * @return {number} The number of characters common to the start of each
+     *     string.
+     */
+    function diff_commonPrefix(text1, text2) {
+      // Quick check for common null cases.
+      if (!text1 || !text2 || text1.charAt(0) !== text2.charAt(0)) {
+        return 0
+      }
+      // Binary search.
+      // Performance analysis: http://neil.fraser.name/news/2007/10/09/
+      var pointermin = 0
+      var pointermax = Math.min(text1.length, text2.length)
+      var pointermid = pointermax
+      var pointerstart = 0
+      while (pointermin < pointermid) {
+        if (
+          text1.substring(pointerstart, pointermid) ==
+          text2.substring(pointerstart, pointermid)
+        ) {
+          pointermin = pointermid
+          pointerstart = pointermin
+        } else {
+          pointermax = pointermid
+        }
+        pointermid = Math.floor((pointermax - pointermin) / 2 + pointermin)
+      }
+
+      if (is_surrogate_pair_start(text1.charCodeAt(pointermid - 1))) {
+        pointermid--
+      }
+
+      return pointermid
+    }
+
+    /**
+     * Determine if the suffix of one string is the prefix of another.
+     * @param {string} text1 First string.
+     * @param {string} text2 Second string.
+     * @return {number} The number of characters common to the end of the first
+     *     string and the start of the second string.
+     * @private
+     */
+    function diff_commonOverlap_(text1, text2) {
+      // Cache the text lengths to prevent multiple calls.
+      var text1_length = text1.length
+      var text2_length = text2.length
+      // Eliminate the null case.
+      if (text1_length == 0 || text2_length == 0) {
+        return 0
+      }
+      // Truncate the longer string.
+      if (text1_length > text2_length) {
+        text1 = text1.substring(text1_length - text2_length)
+      } else if (text1_length < text2_length) {
+        text2 = text2.substring(0, text1_length)
+      }
+      var text_length = Math.min(text1_length, text2_length)
+      // Quick check for the worst case.
+      if (text1 == text2) {
+        return text_length
+      }
+
+      // Start by looking for a single character match
+      // and increase length until no match is found.
+      // Performance analysis: http://neil.fraser.name/news/2010/11/04/
+      var best = 0
+      var length = 1
+      while (true) {
+        var pattern = text1.substring(text_length - length)
+        var found = text2.indexOf(pattern)
+        if (found == -1) {
+          return best
+        }
+        length += found
+        if (
+          found == 0 ||
+          text1.substring(text_length - length) == text2.substring(0, length)
+        ) {
+          best = length
+          length++
+        }
+      }
+    }
+
+    /**
+     * Determine the common suffix of two strings.
+     * @param {string} text1 First string.
+     * @param {string} text2 Second string.
+     * @return {number} The number of characters common to the end of each string.
+     */
+    function diff_commonSuffix(text1, text2) {
+      // Quick check for common null cases.
+      if (!text1 || !text2 || text1.slice(-1) !== text2.slice(-1)) {
+        return 0
+      }
+      // Binary search.
+      // Performance analysis: http://neil.fraser.name/news/2007/10/09/
+      var pointermin = 0
+      var pointermax = Math.min(text1.length, text2.length)
+      var pointermid = pointermax
+      var pointerend = 0
+      while (pointermin < pointermid) {
+        if (
+          text1.substring(
+            text1.length - pointermid,
+            text1.length - pointerend
+          ) ==
+          text2.substring(text2.length - pointermid, text2.length - pointerend)
+        ) {
+          pointermin = pointermid
+          pointerend = pointermin
+        } else {
+          pointermax = pointermid
+        }
+        pointermid = Math.floor((pointermax - pointermin) / 2 + pointermin)
+      }
+
+      if (is_surrogate_pair_end(text1.charCodeAt(text1.length - pointermid))) {
+        pointermid--
+      }
+
+      return pointermid
+    }
+
+    /**
+     * Do the two texts share a substring which is at least half the length of the
+     * longer text?
+     * This speedup can produce non-minimal diffs.
+     * @param {string} text1 First string.
+     * @param {string} text2 Second string.
+     * @return {Array.<string>} Five element Array, containing the prefix of
+     *     text1, the suffix of text1, the prefix of text2, the suffix of
+     *     text2 and the common middle.  Or null if there was no match.
+     */
+    function diff_halfMatch_(text1, text2) {
+      var longtext = text1.length > text2.length ? text1 : text2
+      var shorttext = text1.length > text2.length ? text2 : text1
+      if (longtext.length < 4 || shorttext.length * 2 < longtext.length) {
+        return null // Pointless.
+      }
+
+      /**
+       * Does a substring of shorttext exist within longtext such that the substring
+       * is at least half the length of longtext?
+       * Closure, but does not reference any external variables.
+       * @param {string} longtext Longer string.
+       * @param {string} shorttext Shorter string.
+       * @param {number} i Start index of quarter length substring within longtext.
+       * @return {Array.<string>} Five element Array, containing the prefix of
+       *     longtext, the suffix of longtext, the prefix of shorttext, the suffix
+       *     of shorttext and the common middle.  Or null if there was no match.
+       * @private
+       */
+      function diff_halfMatchI_(longtext, shorttext, i) {
+        // Start with a 1/4 length substring at position i as a seed.
+        var seed = longtext.substring(i, i + Math.floor(longtext.length / 4))
+        var j = -1
+        var best_common = ""
+        var best_longtext_a, best_longtext_b, best_shorttext_a, best_shorttext_b
+        while ((j = shorttext.indexOf(seed, j + 1)) !== -1) {
+          var prefixLength = diff_commonPrefix(
+            longtext.substring(i),
+            shorttext.substring(j)
+          )
+          var suffixLength = diff_commonSuffix(
+            longtext.substring(0, i),
+            shorttext.substring(0, j)
+          )
+          if (best_common.length < suffixLength + prefixLength) {
+            best_common =
+              shorttext.substring(j - suffixLength, j) +
+              shorttext.substring(j, j + prefixLength)
+            best_longtext_a = longtext.substring(0, i - suffixLength)
+            best_longtext_b = longtext.substring(i + prefixLength)
+            best_shorttext_a = shorttext.substring(0, j - suffixLength)
+            best_shorttext_b = shorttext.substring(j + prefixLength)
+          }
+        }
+        if (best_common.length * 2 >= longtext.length) {
+          return [
+            best_longtext_a,
+            best_longtext_b,
+            best_shorttext_a,
+            best_shorttext_b,
+            best_common
+          ]
+        } else {
+          return null
+        }
+      }
+
+      // First check if the second quarter is the seed for a half-match.
+      var hm1 = diff_halfMatchI_(
+        longtext,
+        shorttext,
+        Math.ceil(longtext.length / 4)
+      )
+      // Check again based on the third quarter.
+      var hm2 = diff_halfMatchI_(
+        longtext,
+        shorttext,
+        Math.ceil(longtext.length / 2)
+      )
+      var hm
+      if (!hm1 && !hm2) {
+        return null
+      } else if (!hm2) {
+        hm = hm1
+      } else if (!hm1) {
+        hm = hm2
+      } else {
+        // Both matched.  Select the longest.
+        hm = hm1[4].length > hm2[4].length ? hm1 : hm2
+      }
+
+      // A half-match was found, sort out the return data.
+      var text1_a, text1_b, text2_a, text2_b
+      if (text1.length > text2.length) {
+        text1_a = hm[0]
+        text1_b = hm[1]
+        text2_a = hm[2]
+        text2_b = hm[3]
+      } else {
+        text2_a = hm[0]
+        text2_b = hm[1]
+        text1_a = hm[2]
+        text1_b = hm[3]
+      }
+      var mid_common = hm[4]
+      return [text1_a, text1_b, text2_a, text2_b, mid_common]
+    }
+
+    /**
+     * Reduce the number of edits by eliminating semantically trivial equalities.
+     * @param {!Array.<!diff_match_patch.Diff>} diffs Array of diff tuples.
+     */
+    function diff_cleanupSemantic(diffs) {
+      var changes = false
+      var equalities = [] // Stack of indices where equalities are found.
+      var equalitiesLength = 0 // Keeping our own length var is faster in JS.
+      /** @type {?string} */
+      var lastequality = null
+      // Always equal to diffs[equalities[equalitiesLength - 1]][1]
+      var pointer = 0 // Index of current position.
+      // Number of characters that changed prior to the equality.
+      var length_insertions1 = 0
+      var length_deletions1 = 0
+      // Number of characters that changed after the equality.
+      var length_insertions2 = 0
+      var length_deletions2 = 0
+      while (pointer < diffs.length) {
+        if (diffs[pointer][0] == DIFF_EQUAL) {
+          // Equality found.
+          equalities[equalitiesLength++] = pointer
+          length_insertions1 = length_insertions2
+          length_deletions1 = length_deletions2
+          length_insertions2 = 0
+          length_deletions2 = 0
+          lastequality = diffs[pointer][1]
+        } else {
+          // An insertion or deletion.
+          if (diffs[pointer][0] == DIFF_INSERT) {
+            length_insertions2 += diffs[pointer][1].length
+          } else {
+            length_deletions2 += diffs[pointer][1].length
+          }
+          // Eliminate an equality that is smaller or equal to the edits on both
+          // sides of it.
+          if (
+            lastequality &&
+            lastequality.length <=
+              Math.max(length_insertions1, length_deletions1) &&
+            lastequality.length <=
+              Math.max(length_insertions2, length_deletions2)
+          ) {
+            // Duplicate record.
+            diffs.splice(equalities[equalitiesLength - 1], 0, [
+              DIFF_DELETE,
+              lastequality
+            ])
+            // Change second copy to insert.
+            diffs[equalities[equalitiesLength - 1] + 1][0] = DIFF_INSERT
+            // Throw away the equality we just deleted.
+            equalitiesLength--
+            // Throw away the previous equality (it needs to be reevaluated).
+            equalitiesLength--
+            pointer =
+              equalitiesLength > 0 ? equalities[equalitiesLength - 1] : -1
+            length_insertions1 = 0 // Reset the counters.
+            length_deletions1 = 0
+            length_insertions2 = 0
+            length_deletions2 = 0
+            lastequality = null
+            changes = true
+          }
+        }
+        pointer++
+      }
+
+      // Normalize the diff.
+      if (changes) {
+        diff_cleanupMerge(diffs)
+      }
+      diff_cleanupSemanticLossless(diffs)
+
+      // Find any overlaps between deletions and insertions.
+      // e.g: <del>abcxxx</del><ins>xxxdef</ins>
+      //   -> <del>abc</del>xxx<ins>def</ins>
+      // e.g: <del>xxxabc</del><ins>defxxx</ins>
+      //   -> <ins>def</ins>xxx<del>abc</del>
+      // Only extract an overlap if it is as big as the edit ahead or behind it.
+      pointer = 1
+      while (pointer < diffs.length) {
+        if (
+          diffs[pointer - 1][0] == DIFF_DELETE &&
+          diffs[pointer][0] == DIFF_INSERT
+        ) {
+          var deletion = diffs[pointer - 1][1]
+          var insertion = diffs[pointer][1]
+          var overlap_length1 = diff_commonOverlap_(deletion, insertion)
+          var overlap_length2 = diff_commonOverlap_(insertion, deletion)
+          if (overlap_length1 >= overlap_length2) {
+            if (
+              overlap_length1 >= deletion.length / 2 ||
+              overlap_length1 >= insertion.length / 2
+            ) {
+              // Overlap found.  Insert an equality and trim the surrounding edits.
+              diffs.splice(pointer, 0, [
+                DIFF_EQUAL,
+                insertion.substring(0, overlap_length1)
+              ])
+              diffs[pointer - 1][1] = deletion.substring(
+                0,
+                deletion.length - overlap_length1
+              )
+              diffs[pointer + 1][1] = insertion.substring(overlap_length1)
+              pointer++
+            }
+          } else {
+            if (
+              overlap_length2 >= deletion.length / 2 ||
+              overlap_length2 >= insertion.length / 2
+            ) {
+              // Reverse overlap found.
+              // Insert an equality and swap and trim the surrounding edits.
+              diffs.splice(pointer, 0, [
+                DIFF_EQUAL,
+                deletion.substring(0, overlap_length2)
+              ])
+              diffs[pointer - 1][0] = DIFF_INSERT
+              diffs[pointer - 1][1] = insertion.substring(
+                0,
+                insertion.length - overlap_length2
+              )
+              diffs[pointer + 1][0] = DIFF_DELETE
+              diffs[pointer + 1][1] = deletion.substring(overlap_length2)
+              pointer++
+            }
+          }
+          pointer++
+        }
+        pointer++
+      }
+    }
+
+    var nonAlphaNumericRegex_ = /[^a-zA-Z0-9]/
+    var whitespaceRegex_ = /\s/
+    var linebreakRegex_ = /[\r\n]/
+    var blanklineEndRegex_ = /\n\r?\n$/
+    var blanklineStartRegex_ = /^\r?\n\r?\n/
+
+    /**
+     * Look for single edits surrounded on both sides by equalities
+     * which can be shifted sideways to align the edit to a word boundary.
+     * e.g: The c<ins>at c</ins>ame. -> The <ins>cat </ins>came.
+     * @param {!Array.<!diff_match_patch.Diff>} diffs Array of diff tuples.
+     */
+    function diff_cleanupSemanticLossless(diffs) {
+      /**
+       * Given two strings, compute a score representing whether the internal
+       * boundary falls on logical boundaries.
+       * Scores range from 6 (best) to 0 (worst).
+       * Closure, but does not reference any external variables.
+       * @param {string} one First string.
+       * @param {string} two Second string.
+       * @return {number} The score.
+       * @private
+       */
+      function diff_cleanupSemanticScore_(one, two) {
+        if (!one || !two) {
+          // Edges are the best.
+          return 6
+        }
+
+        // Each port of this function behaves slightly differently due to
+        // subtle differences in each language's definition of things like
+        // 'whitespace'.  Since this function's purpose is largely cosmetic,
+        // the choice has been made to use each language's native features
+        // rather than force total conformity.
+        var char1 = one.charAt(one.length - 1)
+        var char2 = two.charAt(0)
+        var nonAlphaNumeric1 = char1.match(nonAlphaNumericRegex_)
+        var nonAlphaNumeric2 = char2.match(nonAlphaNumericRegex_)
+        var whitespace1 = nonAlphaNumeric1 && char1.match(whitespaceRegex_)
+        var whitespace2 = nonAlphaNumeric2 && char2.match(whitespaceRegex_)
+        var lineBreak1 = whitespace1 && char1.match(linebreakRegex_)
+        var lineBreak2 = whitespace2 && char2.match(linebreakRegex_)
+        var blankLine1 = lineBreak1 && one.match(blanklineEndRegex_)
+        var blankLine2 = lineBreak2 && two.match(blanklineStartRegex_)
+
+        if (blankLine1 || blankLine2) {
+          // Five points for blank lines.
+          return 5
+        } else if (lineBreak1 || lineBreak2) {
+          // Four points for line breaks.
+          return 4
+        } else if (nonAlphaNumeric1 && !whitespace1 && whitespace2) {
+          // Three points for end of sentences.
+          return 3
+        } else if (whitespace1 || whitespace2) {
+          // Two points for whitespace.
+          return 2
+        } else if (nonAlphaNumeric1 || nonAlphaNumeric2) {
+          // One point for non-alphanumeric.
+          return 1
+        }
+        return 0
+      }
+
+      var pointer = 1
+      // Intentionally ignore the first and last element (don't need checking).
+      while (pointer < diffs.length - 1) {
+        if (
+          diffs[pointer - 1][0] == DIFF_EQUAL &&
+          diffs[pointer + 1][0] == DIFF_EQUAL
+        ) {
+          // This is a single edit surrounded by equalities.
+          var equality1 = diffs[pointer - 1][1]
+          var edit = diffs[pointer][1]
+          var equality2 = diffs[pointer + 1][1]
+
+          // First, shift the edit as far left as possible.
+          var commonOffset = diff_commonSuffix(equality1, edit)
+          if (commonOffset) {
+            var commonString = edit.substring(edit.length - commonOffset)
+            equality1 = equality1.substring(0, equality1.length - commonOffset)
+            edit = commonString + edit.substring(0, edit.length - commonOffset)
+            equality2 = commonString + equality2
+          }
+
+          // Second, step character by character right, looking for the best fit.
+          var bestEquality1 = equality1
+          var bestEdit = edit
+          var bestEquality2 = equality2
+          var bestScore =
+            diff_cleanupSemanticScore_(equality1, edit) +
+            diff_cleanupSemanticScore_(edit, equality2)
+          while (edit.charAt(0) === equality2.charAt(0)) {
+            equality1 += edit.charAt(0)
+            edit = edit.substring(1) + equality2.charAt(0)
+            equality2 = equality2.substring(1)
+            var score =
+              diff_cleanupSemanticScore_(equality1, edit) +
+              diff_cleanupSemanticScore_(edit, equality2)
+            // The >= encourages trailing rather than leading whitespace on edits.
+            if (score >= bestScore) {
+              bestScore = score
+              bestEquality1 = equality1
+              bestEdit = edit
+              bestEquality2 = equality2
+            }
+          }
+
+          if (diffs[pointer - 1][1] != bestEquality1) {
+            // We have an improvement, save it back to the diff.
+            if (bestEquality1) {
+              diffs[pointer - 1][1] = bestEquality1
+            } else {
+              diffs.splice(pointer - 1, 1)
+              pointer--
+            }
+            diffs[pointer][1] = bestEdit
+            if (bestEquality2) {
+              diffs[pointer + 1][1] = bestEquality2
+            } else {
+              diffs.splice(pointer + 1, 1)
+              pointer--
+            }
+          }
+        }
+        pointer++
+      }
+    }
+
+    /**
+     * Reorder and merge like edit sections.  Merge equalities.
+     * Any edit section can move as long as it doesn't cross an equality.
+     * @param {Array} diffs Array of diff tuples.
+     * @param {boolean} fix_unicode Whether to normalize to a unicode-correct diff
+     */
+    function diff_cleanupMerge(diffs, fix_unicode) {
+      diffs.push([DIFF_EQUAL, ""]) // Add a dummy entry at the end.
+      var pointer = 0
+      var count_delete = 0
+      var count_insert = 0
+      var text_delete = ""
+      var text_insert = ""
+      var commonlength
+      while (pointer < diffs.length) {
+        if (pointer < diffs.length - 1 && !diffs[pointer][1]) {
+          diffs.splice(pointer, 1)
+          continue
+        }
+        switch (diffs[pointer][0]) {
+          case DIFF_INSERT:
+            count_insert++
+            text_insert += diffs[pointer][1]
+            pointer++
+            break
+          case DIFF_DELETE:
+            count_delete++
+            text_delete += diffs[pointer][1]
+            pointer++
+            break
+          case DIFF_EQUAL:
+            var previous_equality = pointer - count_insert - count_delete - 1
+            if (fix_unicode) {
+              // prevent splitting of unicode surrogate pairs.  when fix_unicode is true,
+              // we assume that the old and new text in the diff are complete and correct
+              // unicode-encoded JS strings, but the tuple boundaries may fall between
+              // surrogate pairs.  we fix this by shaving off stray surrogates from the end
+              // of the previous equality and the beginning of this equality.  this may create
+              // empty equalities or a common prefix or suffix.  for example, if AB and AC are
+              // emojis, `[[0, 'A'], [-1, 'BA'], [0, 'C']]` would turn into deleting 'ABAC' and
+              // inserting 'AC', and then the common suffix 'AC' will be eliminated.  in this
+              // particular case, both equalities go away, we absorb any previous inequalities,
+              // and we keep scanning for the next equality before rewriting the tuples.
+              if (
+                previous_equality >= 0 &&
+                ends_with_pair_start(diffs[previous_equality][1])
+              ) {
+                var stray = diffs[previous_equality][1].slice(-1)
+                diffs[previous_equality][1] = diffs[previous_equality][1].slice(
+                  0,
+                  -1
+                )
+                text_delete = stray + text_delete
+                text_insert = stray + text_insert
+                if (!diffs[previous_equality][1]) {
+                  // emptied out previous equality, so delete it and include previous delete/insert
+                  diffs.splice(previous_equality, 1)
+                  pointer--
+                  var k = previous_equality - 1
+                  if (diffs[k] && diffs[k][0] === DIFF_INSERT) {
+                    count_insert++
+                    text_insert = diffs[k][1] + text_insert
+                    k--
+                  }
+                  if (diffs[k] && diffs[k][0] === DIFF_DELETE) {
+                    count_delete++
+                    text_delete = diffs[k][1] + text_delete
+                    k--
+                  }
+                  previous_equality = k
+                }
+              }
+              if (starts_with_pair_end(diffs[pointer][1])) {
+                var stray = diffs[pointer][1].charAt(0)
+                diffs[pointer][1] = diffs[pointer][1].slice(1)
+                text_delete += stray
+                text_insert += stray
+              }
+            }
+            if (pointer < diffs.length - 1 && !diffs[pointer][1]) {
+              // for empty equality not at end, wait for next equality
+              diffs.splice(pointer, 1)
+              break
+            }
+            if (text_delete.length > 0 || text_insert.length > 0) {
+              // note that diff_commonPrefix and diff_commonSuffix are unicode-aware
+              if (text_delete.length > 0 && text_insert.length > 0) {
+                // Factor out any common prefixes.
+                commonlength = diff_commonPrefix(text_insert, text_delete)
+                if (commonlength !== 0) {
+                  if (previous_equality >= 0) {
+                    diffs[previous_equality][1] += text_insert.substring(
+                      0,
+                      commonlength
+                    )
+                  } else {
+                    diffs.splice(0, 0, [
+                      DIFF_EQUAL,
+                      text_insert.substring(0, commonlength)
+                    ])
+                    pointer++
+                  }
+                  text_insert = text_insert.substring(commonlength)
+                  text_delete = text_delete.substring(commonlength)
+                }
+                // Factor out any common suffixes.
+                commonlength = diff_commonSuffix(text_insert, text_delete)
+                if (commonlength !== 0) {
+                  diffs[pointer][1] =
+                    text_insert.substring(text_insert.length - commonlength) +
+                    diffs[pointer][1]
+                  text_insert = text_insert.substring(
+                    0,
+                    text_insert.length - commonlength
+                  )
+                  text_delete = text_delete.substring(
+                    0,
+                    text_delete.length - commonlength
+                  )
+                }
+              }
+              // Delete the offending records and add the merged ones.
+              var n = count_insert + count_delete
+              if (text_delete.length === 0 && text_insert.length === 0) {
+                diffs.splice(pointer - n, n)
+                pointer = pointer - n
+              } else if (text_delete.length === 0) {
+                diffs.splice(pointer - n, n, [DIFF_INSERT, text_insert])
+                pointer = pointer - n + 1
+              } else if (text_insert.length === 0) {
+                diffs.splice(pointer - n, n, [DIFF_DELETE, text_delete])
+                pointer = pointer - n + 1
+              } else {
+                diffs.splice(
+                  pointer - n,
+                  n,
+                  [DIFF_DELETE, text_delete],
+                  [DIFF_INSERT, text_insert]
+                )
+                pointer = pointer - n + 2
+              }
+            }
+            if (pointer !== 0 && diffs[pointer - 1][0] === DIFF_EQUAL) {
+              // Merge this equality with the previous one.
+              diffs[pointer - 1][1] += diffs[pointer][1]
+              diffs.splice(pointer, 1)
+            } else {
+              pointer++
+            }
+            count_insert = 0
+            count_delete = 0
+            text_delete = ""
+            text_insert = ""
+            break
+        }
+      }
+      if (diffs[diffs.length - 1][1] === "") {
+        diffs.pop() // Remove the dummy entry at the end.
+      }
+
+      // Second pass: look for single edits surrounded on both sides by equalities
+      // which can be shifted sideways to eliminate an equality.
+      // e.g: A<ins>BA</ins>C -> <ins>AB</ins>AC
+      var changes = false
+      pointer = 1
+      // Intentionally ignore the first and last element (don't need checking).
+      while (pointer < diffs.length - 1) {
+        if (
+          diffs[pointer - 1][0] === DIFF_EQUAL &&
+          diffs[pointer + 1][0] === DIFF_EQUAL
+        ) {
+          // This is a single edit surrounded by equalities.
+          if (
+            diffs[pointer][1].substring(
+              diffs[pointer][1].length - diffs[pointer - 1][1].length
+            ) === diffs[pointer - 1][1]
+          ) {
+            // Shift the edit over the previous equality.
+            diffs[pointer][1] =
+              diffs[pointer - 1][1] +
+              diffs[pointer][1].substring(
+                0,
+                diffs[pointer][1].length - diffs[pointer - 1][1].length
+              )
+            diffs[pointer + 1][1] =
+              diffs[pointer - 1][1] + diffs[pointer + 1][1]
+            diffs.splice(pointer - 1, 1)
+            changes = true
+          } else if (
+            diffs[pointer][1].substring(0, diffs[pointer + 1][1].length) ==
+            diffs[pointer + 1][1]
+          ) {
+            // Shift the edit over the next equality.
+            diffs[pointer - 1][1] += diffs[pointer + 1][1]
+            diffs[pointer][1] =
+              diffs[pointer][1].substring(diffs[pointer + 1][1].length) +
+              diffs[pointer + 1][1]
+            diffs.splice(pointer + 1, 1)
+            changes = true
+          }
+        }
+        pointer++
+      }
+      // If shifts were made, the diff needs reordering and another shift sweep.
+      if (changes) {
+        diff_cleanupMerge(diffs, fix_unicode)
+      }
+    }
+
+    function is_surrogate_pair_start(charCode) {
+      return charCode >= 0xd800 && charCode <= 0xdbff
+    }
+
+    function is_surrogate_pair_end(charCode) {
+      return charCode >= 0xdc00 && charCode <= 0xdfff
+    }
+
+    function starts_with_pair_end(str) {
+      return is_surrogate_pair_end(str.charCodeAt(0))
+    }
+
+    function ends_with_pair_start(str) {
+      return is_surrogate_pair_start(str.charCodeAt(str.length - 1))
+    }
+
+    function remove_empty_tuples(tuples) {
+      var ret = []
+      for (var i = 0; i < tuples.length; i++) {
+        if (tuples[i][1].length > 0) {
+          ret.push(tuples[i])
+        }
+      }
+      return ret
+    }
+
+    function make_edit_splice(before, oldMiddle, newMiddle, after) {
+      if (ends_with_pair_start(before) || starts_with_pair_end(after)) {
+        return null
+      }
+      return remove_empty_tuples([
+        [DIFF_EQUAL, before],
+        [DIFF_DELETE, oldMiddle],
+        [DIFF_INSERT, newMiddle],
+        [DIFF_EQUAL, after]
+      ])
+    }
+
+    function find_cursor_edit_diff(oldText, newText, cursor_pos) {
+      // note: this runs after equality check has ruled out exact equality
+      var oldRange =
+        typeof cursor_pos === "number"
+          ? { index: cursor_pos, length: 0 }
+          : cursor_pos.oldRange
+      var newRange = typeof cursor_pos === "number" ? null : cursor_pos.newRange
+      // take into account the old and new selection to generate the best diff
+      // possible for a text edit.  for example, a text change from "xxx" to "xx"
+      // could be a delete or forwards-delete of any one of the x's, or the
+      // result of selecting two of the x's and typing "x".
+      var oldLength = oldText.length
+      var newLength = newText.length
+      if (
+        oldRange.length === 0 &&
+        (newRange === null || newRange.length === 0)
+      ) {
+        // see if we have an insert or delete before or after cursor
+        var oldCursor = oldRange.index
+        var oldBefore = oldText.slice(0, oldCursor)
+        var oldAfter = oldText.slice(oldCursor)
+        var maybeNewCursor = newRange ? newRange.index : null
+        editBefore: {
+          // is this an insert or delete right before oldCursor?
+          var newCursor = oldCursor + newLength - oldLength
+          if (maybeNewCursor !== null && maybeNewCursor !== newCursor) {
+            break editBefore
+          }
+          if (newCursor < 0 || newCursor > newLength) {
+            break editBefore
+          }
+          var newBefore = newText.slice(0, newCursor)
+          var newAfter = newText.slice(newCursor)
+          if (newAfter !== oldAfter) {
+            break editBefore
+          }
+          var prefixLength = Math.min(oldCursor, newCursor)
+          var oldPrefix = oldBefore.slice(0, prefixLength)
+          var newPrefix = newBefore.slice(0, prefixLength)
+          if (oldPrefix !== newPrefix) {
+            break editBefore
+          }
+          var oldMiddle = oldBefore.slice(prefixLength)
+          var newMiddle = newBefore.slice(prefixLength)
+          return make_edit_splice(oldPrefix, oldMiddle, newMiddle, oldAfter)
+        }
+        editAfter: {
+          // is this an insert or delete right after oldCursor?
+          if (maybeNewCursor !== null && maybeNewCursor !== oldCursor) {
+            break editAfter
+          }
+          var cursor = oldCursor
+          var newBefore = newText.slice(0, cursor)
+          var newAfter = newText.slice(cursor)
+          if (newBefore !== oldBefore) {
+            break editAfter
+          }
+          var suffixLength = Math.min(oldLength - cursor, newLength - cursor)
+          var oldSuffix = oldAfter.slice(oldAfter.length - suffixLength)
+          var newSuffix = newAfter.slice(newAfter.length - suffixLength)
+          if (oldSuffix !== newSuffix) {
+            break editAfter
+          }
+          var oldMiddle = oldAfter.slice(0, oldAfter.length - suffixLength)
+          var newMiddle = newAfter.slice(0, newAfter.length - suffixLength)
+          return make_edit_splice(oldBefore, oldMiddle, newMiddle, oldSuffix)
+        }
+      }
+      if (oldRange.length > 0 && newRange && newRange.length === 0) {
+        replaceRange: {
+          // see if diff could be a splice of the old selection range
+          var oldPrefix = oldText.slice(0, oldRange.index)
+          var oldSuffix = oldText.slice(oldRange.index + oldRange.length)
+          var prefixLength = oldPrefix.length
+          var suffixLength = oldSuffix.length
+          if (newLength < prefixLength + suffixLength) {
+            break replaceRange
+          }
+          var newPrefix = newText.slice(0, prefixLength)
+          var newSuffix = newText.slice(newLength - suffixLength)
+          if (oldPrefix !== newPrefix || oldSuffix !== newSuffix) {
+            break replaceRange
+          }
+          var oldMiddle = oldText.slice(prefixLength, oldLength - suffixLength)
+          var newMiddle = newText.slice(prefixLength, newLength - suffixLength)
+          return make_edit_splice(oldPrefix, oldMiddle, newMiddle, oldSuffix)
+        }
+      }
+
+      return null
+    }
+
+    function diff(text1, text2, cursor_pos, cleanup) {
+      // only pass fix_unicode=true at the top level, not when diff_main is
+      // recursively invoked
+      return diff_main(text1, text2, cursor_pos, cleanup, true)
+    }
+
+    diff.INSERT = DIFF_INSERT
+    diff.DELETE = DIFF_DELETE
+    diff.EQUAL = DIFF_EQUAL
+
+    module.exports = diff
 
     /***/
   },
@@ -10565,14 +11728,14 @@ import { createRequire as __WEBPACK_EXTERNAL_createRequire } from "module"
       return fs.writeFileSync(file, str, options)
     }
 
-    // NOTE: do not change this export format; required for ESM compat
-    // see https://github.com/jprichardson/node-jsonfile/pull/162 for details
-    module.exports = {
+    const jsonfile = {
       readFile,
       readFileSync,
       writeFile,
       writeFileSync
     }
+
+    module.exports = jsonfile
 
     /***/
   },
@@ -19094,6 +20257,8 @@ import { createRequire as __WEBPACK_EXTERNAL_createRequire } from "module"
         connect,
         ...options
       } = {}) {
+        super()
+
         if (typeof factory !== "function") {
           throw new InvalidArgumentError("factory must be a function.")
         }
@@ -19113,8 +20278,6 @@ import { createRequire as __WEBPACK_EXTERNAL_createRequire } from "module"
             "maxRedirections must be a positive number"
           )
         }
-
-        super(options)
 
         if (connect && typeof connect !== "function") {
           connect = { ...connect }
@@ -22054,11 +23217,10 @@ import { createRequire as __WEBPACK_EXTERNAL_createRequire } from "module"
           autoSelectFamilyAttemptTimeout,
           // h2
           maxConcurrentStreams,
-          allowH2,
-          webSocket
+          allowH2
         } = {}
       ) {
-        super({ webSocket })
+        super()
 
         if (keepAlive !== undefined) {
           throw new InvalidArgumentError(
@@ -22684,24 +23846,15 @@ import { createRequire as __WEBPACK_EXTERNAL_createRequire } from "module"
     const kOnDestroyed = Symbol("onDestroyed")
     const kOnClosed = Symbol("onClosed")
     const kInterceptedDispatch = Symbol("Intercepted Dispatch")
-    const kWebSocketOptions = Symbol("webSocketOptions")
 
     class DispatcherBase extends Dispatcher {
-      constructor(opts) {
+      constructor() {
         super()
 
         this[kDestroyed] = false
         this[kOnDestroyed] = null
         this[kClosed] = false
         this[kOnClosed] = []
-        this[kWebSocketOptions] = opts?.webSocket ?? {}
-      }
-
-      get webSocketOptions() {
-        return {
-          maxPayloadSize:
-            this[kWebSocketOptions].maxPayloadSize ?? 128 * 1024 * 1024
-        }
       }
 
       get destroyed() {
@@ -23285,8 +24438,8 @@ import { createRequire as __WEBPACK_EXTERNAL_createRequire } from "module"
     const kStats = Symbol("stats")
 
     class PoolBase extends DispatcherBase {
-      constructor(opts) {
-        super(opts)
+      constructor() {
+        super()
 
         this[kQueue] = new FixedQueue()
         this[kClients] = []
@@ -23539,6 +24692,8 @@ import { createRequire as __WEBPACK_EXTERNAL_createRequire } from "module"
           ...options
         } = {}
       ) {
+        super()
+
         if (
           connections != null &&
           (!Number.isFinite(connections) || connections < 0)
@@ -23573,8 +24728,6 @@ import { createRequire as __WEBPACK_EXTERNAL_createRequire } from "module"
             ...connect
           })
         }
-
-        super(options)
 
         this[kInterceptors] =
           options.interceptors?.Pool && Array.isArray(options.interceptors.Pool)
@@ -42228,39 +43381,44 @@ ${pendingInterceptorsFormatter.format(pending)}
     const kBuffer = Symbol("kBuffer")
     const kLength = Symbol("kLength")
 
+    // Default maximum decompressed message size: 4 MB
+    const kDefaultMaxDecompressedSize = 4 * 1024 * 1024
+
     class PerMessageDeflate {
       /** @type {import('node:zlib').InflateRaw} */
       #inflate
 
       #options = {}
 
-      #maxPayloadSize = 0
+      /** @type {boolean} */
+      #aborted = false
+
+      /** @type {Function|null} */
+      #currentCallback = null
 
       /**
        * @param {Map<string, string>} extensions
        */
-      constructor(extensions, options) {
+      constructor(extensions) {
         this.#options.serverNoContextTakeover = extensions.has(
           "server_no_context_takeover"
         )
         this.#options.serverMaxWindowBits = extensions.get(
           "server_max_window_bits"
         )
-
-        this.#maxPayloadSize = options.maxPayloadSize
       }
 
-      /**
-       * Decompress a compressed payload.
-       * @param {Buffer} chunk Compressed data
-       * @param {boolean} fin Final fragment flag
-       * @param {Function} callback Callback function
-       */
       decompress(chunk, fin, callback) {
         // An endpoint uses the following algorithm to decompress a message.
         // 1.  Append 4 octets of 0x00 0x00 0xff 0xff to the tail end of the
         //     payload of the message.
         // 2.  Decompress the resulting data using DEFLATE.
+
+        if (this.#aborted) {
+          callback(new MessageSizeExceededError())
+          return
+        }
+
         if (!this.#inflate) {
           let windowBits = Z_DEFAULT_WINDOWBITS
 
@@ -42284,15 +43442,23 @@ ${pendingInterceptorsFormatter.format(pending)}
           this.#inflate[kLength] = 0
 
           this.#inflate.on("data", data => {
+            if (this.#aborted) {
+              return
+            }
+
             this.#inflate[kLength] += data.length
 
-            if (
-              this.#maxPayloadSize > 0 &&
-              this.#inflate[kLength] > this.#maxPayloadSize
-            ) {
-              callback(new MessageSizeExceededError())
+            if (this.#inflate[kLength] > kDefaultMaxDecompressedSize) {
+              this.#aborted = true
               this.#inflate.removeAllListeners()
+              this.#inflate.destroy()
               this.#inflate = null
+
+              if (this.#currentCallback) {
+                const cb = this.#currentCallback
+                this.#currentCallback = null
+                cb(new MessageSizeExceededError())
+              }
               return
             }
 
@@ -42305,13 +43471,14 @@ ${pendingInterceptorsFormatter.format(pending)}
           })
         }
 
+        this.#currentCallback = callback
         this.#inflate.write(chunk)
         if (fin) {
           this.#inflate.write(tail)
         }
 
         this.#inflate.flush(() => {
-          if (!this.#inflate) {
+          if (this.#aborted || !this.#inflate) {
             return
           }
 
@@ -42322,6 +43489,7 @@ ${pendingInterceptorsFormatter.format(pending)}
 
           this.#inflate[kBuffer].length = 0
           this.#inflate[kLength] = 0
+          this.#currentCallback = null
 
           callback(null, full)
         })
@@ -42354,7 +43522,6 @@ ${pendingInterceptorsFormatter.format(pending)}
     const { WebsocketFrameSend } = __nccwpck_require__(3264)
     const { closeWebSocketConnection } = __nccwpck_require__(6897)
     const { PerMessageDeflate } = __nccwpck_require__(9469)
-    const { MessageSizeExceededError } = __nccwpck_require__(8707)
 
     // This code was influenced by ws released under the MIT license.
     // Copyright (c) 2011 Einar Otto Stangvik <einaros@gmail.com>
@@ -42363,7 +43530,6 @@ ${pendingInterceptorsFormatter.format(pending)}
 
     class ByteParser extends Writable {
       #buffers = []
-      #fragmentsBytes = 0
       #byteOffset = 0
       #loop = false
 
@@ -42375,25 +43541,20 @@ ${pendingInterceptorsFormatter.format(pending)}
       /** @type {Map<string, PerMessageDeflate>} */
       #extensions
 
-      /** @type {number} */
-      #maxPayloadSize
-
       /**
        * @param {import('./websocket').WebSocket} ws
        * @param {Map<string, string>|null} extensions
-       * @param {{ maxPayloadSize?: number }} [options]
        */
-      constructor(ws, extensions, options = {}) {
+      constructor(ws, extensions) {
         super()
 
         this.ws = ws
         this.#extensions = extensions == null ? new Map() : extensions
-        this.#maxPayloadSize = options.maxPayloadSize ?? 0
 
         if (this.#extensions.has("permessage-deflate")) {
           this.#extensions.set(
             "permessage-deflate",
-            new PerMessageDeflate(extensions, options)
+            new PerMessageDeflate(extensions)
           )
         }
       }
@@ -42408,22 +43569,6 @@ ${pendingInterceptorsFormatter.format(pending)}
         this.#loop = true
 
         this.run(callback)
-      }
-
-      #validatePayloadLength() {
-        if (
-          this.#maxPayloadSize > 0 &&
-          !isControlFrame(this.#info.opcode) &&
-          this.#info.payloadLength > this.#maxPayloadSize
-        ) {
-          failWebsocketConnection(
-            this.ws,
-            "Payload size exceeds maximum allowed size"
-          )
-          return false
-        }
-
-        return true
       }
 
       /**
@@ -42527,10 +43672,6 @@ ${pendingInterceptorsFormatter.format(pending)}
             if (payloadLength <= 125) {
               this.#info.payloadLength = payloadLength
               this.#state = parserStates.READ_DATA
-
-              if (!this.#validatePayloadLength()) {
-                return
-              }
             } else if (payloadLength === 126) {
               this.#state = parserStates.PAYLOADLENGTH_16
             } else if (payloadLength === 127) {
@@ -42555,10 +43696,6 @@ ${pendingInterceptorsFormatter.format(pending)}
 
             this.#info.payloadLength = buffer.readUInt16BE(0)
             this.#state = parserStates.READ_DATA
-
-            if (!this.#validatePayloadLength()) {
-              return
-            }
           } else if (this.#state === parserStates.PAYLOADLENGTH_64) {
             if (this.#byteOffset < 8) {
               return callback()
@@ -42584,10 +43721,6 @@ ${pendingInterceptorsFormatter.format(pending)}
 
             this.#info.payloadLength = lower
             this.#state = parserStates.READ_DATA
-
-            if (!this.#validatePayloadLength()) {
-              return
-            }
           } else if (this.#state === parserStates.READ_DATA) {
             if (this.#byteOffset < this.#info.payloadLength) {
               return callback()
@@ -42600,29 +43733,20 @@ ${pendingInterceptorsFormatter.format(pending)}
               this.#state = parserStates.INFO
             } else {
               if (!this.#info.compressed) {
-                this.writeFragments(body)
-
-                if (
-                  this.#maxPayloadSize > 0 &&
-                  this.#fragmentsBytes > this.#maxPayloadSize
-                ) {
-                  failWebsocketConnection(
-                    this.ws,
-                    new MessageSizeExceededError().message
-                  )
-                  return
-                }
+                this.#fragments.push(body)
 
                 // If the frame is not fragmented, a message has been received.
                 // If the frame is fragmented, it will terminate with a fin bit set
                 // and an opcode of 0 (continuation), therefore we handle that when
                 // parsing continuation frames, not here.
                 if (!this.#info.fragmented && this.#info.fin) {
+                  const fullMessage = Buffer.concat(this.#fragments)
                   websocketMessageReceived(
                     this.ws,
                     this.#info.binaryType,
-                    this.consumeFragments()
+                    fullMessage
                   )
+                  this.#fragments.length = 0
                 }
 
                 this.#state = parserStates.INFO
@@ -42635,18 +43759,7 @@ ${pendingInterceptorsFormatter.format(pending)}
                       return
                     }
 
-                    this.writeFragments(data)
-
-                    if (
-                      this.#maxPayloadSize > 0 &&
-                      this.#fragmentsBytes > this.#maxPayloadSize
-                    ) {
-                      failWebsocketConnection(
-                        this.ws,
-                        new MessageSizeExceededError().message
-                      )
-                      return
-                    }
+                    this.#fragments.push(data)
 
                     if (!this.#info.fin) {
                       this.#state = parserStates.INFO
@@ -42658,11 +43771,12 @@ ${pendingInterceptorsFormatter.format(pending)}
                     websocketMessageReceived(
                       this.ws,
                       this.#info.binaryType,
-                      this.consumeFragments()
+                      Buffer.concat(this.#fragments)
                     )
 
                     this.#loop = true
                     this.#state = parserStates.INFO
+                    this.#fragments.length = 0
                     this.run(callback)
                   })
 
@@ -42714,26 +43828,6 @@ ${pendingInterceptorsFormatter.format(pending)}
         this.#byteOffset -= n
 
         return buffer
-      }
-
-      writeFragments(fragment) {
-        this.#fragmentsBytes += fragment.length
-        this.#fragments.push(fragment)
-      }
-
-      consumeFragments() {
-        const fragments = this.#fragments
-
-        if (fragments.length === 1) {
-          this.#fragmentsBytes = 0
-          return fragments.shift()
-        }
-
-        const output = Buffer.concat(fragments, this.#fragmentsBytes)
-        this.#fragments = []
-        this.#fragmentsBytes = 0
-
-        return output
       }
 
       parseCloseBody(data) {
@@ -43810,12 +44904,7 @@ ${pendingInterceptorsFormatter.format(pending)}
         // once this happens, the connection is open
         this[kResponse] = response
 
-        const maxPayloadSize =
-          this[kController]?.dispatcher?.webSocketOptions?.maxPayloadSize
-
-        const parser = new ByteParser(this, parsedExtensions, {
-          maxPayloadSize
-        })
+        const parser = new ByteParser(this, parsedExtensions)
         parser.on("drain", onParserDrain)
         parser.on("error", onParserError.bind(this))
 
@@ -44717,7 +45806,10 @@ const external_os_namespaceObject = __WEBPACK_EXTERNAL_createRequire(
   import.meta.url
 )("os")
 // EXTERNAL MODULE: external "path"
-var external_path_ = __nccwpck_require__(6928) // CONCATENATED MODULE: ./node_modules/@actions/core/lib/utils.js
+var external_path_ = __nccwpck_require__(6928) // CONCATENATED MODULE: external "readline"
+const external_readline_namespaceObject = __WEBPACK_EXTERNAL_createRequire(
+  import.meta.url
+)("readline") // CONCATENATED MODULE: ./node_modules/@actions/core/lib/utils.js
 // We use any as a valid input type
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /**
@@ -51415,11 +52507,11 @@ class Sanitizer {
             message: value.message
           }
         }
-        if (key === "headers" && isObject(value)) {
+        if (key === "headers") {
           return this.sanitizeHeaders(value)
-        } else if (key === "url" && typeof value === "string") {
+        } else if (key === "url") {
           return this.sanitizeUrl(value)
-        } else if (key === "query" && isObject(value)) {
+        } else if (key === "query") {
           return this.sanitizeQuery(value)
         } else if (key === "body") {
           // Don't log the request body
@@ -52090,12 +53182,13 @@ function getHeaderName() {
 async function userAgentPlatform_setPlatformSpecificData(map) {
   if (process && process.versions) {
     const osInfo = `${os.type()} ${os.release()}; ${os.arch()}`
-    if (process.versions.bun) {
-      map.set("Bun", `${process.versions.bun} (${osInfo})`)
-    } else if (process.versions.deno) {
-      map.set("Deno", `${process.versions.deno} (${osInfo})`)
-    } else if (process.versions.node) {
-      map.set("Node", `${process.versions.node} (${osInfo})`)
+    const versions = process.versions
+    if (versions.bun) {
+      map.set("Bun", `${versions.bun} (${osInfo})`)
+    } else if (versions.deno) {
+      map.set("Deno", `${versions.deno} (${osInfo})`)
+    } else if (versions.node) {
+      map.set("Node", `${versions.node} (${osInfo})`)
     }
   }
 } // CONCATENATED MODULE: ./node_modules/@typespec/ts-http-runtime/dist/esm/util/userAgent.js
@@ -52404,7 +53497,7 @@ function isSystemError(err) {
 //# sourceMappingURL=exponentialRetryStrategy.js.map
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-const constants_SDK_VERSION = "0.3.5"
+const constants_SDK_VERSION = "0.3.4"
 const constants_DEFAULT_RETRY_POLICY_COUNT = 3 // CONCATENATED MODULE: ./node_modules/@typespec/ts-http-runtime/dist/esm/policies/retryPolicy.js
 //# sourceMappingURL=constants.js.map
 // Copyright (c) Microsoft Corporation.
@@ -52451,11 +53544,11 @@ function retryPolicy_retryPolicy(
           // RestErrors are valid targets for the retry strategies.
           // If none of the retry strategies can work with them, they will be thrown later in this policy.
           // If the received error is not a RestError, it is immediately thrown.
-          if (!restError_isRestError(e)) {
+          responseError = e
+          if (!e || responseError.name !== "RestError") {
             throw e
           }
-          responseError = e
-          response = e.response
+          response = responseError.response
         }
         if (request.abortSignal?.aborted) {
           logger.error(`Retry ${retryCount}: Request aborted.`)
@@ -52889,16 +53982,20 @@ function setProxyAgentOnRequest(request, cachedAgents, proxyUrl) {
       "TLS settings are not supported in combination with custom Proxy, certificates provided to the client will be ignored."
     )
   }
+  const headers = request.headers.toJSON()
   if (isInsecure) {
     if (!cachedAgents.httpProxyAgent) {
       cachedAgents.httpProxyAgent = new http_proxy_agent_dist.HttpProxyAgent(
-        proxyUrl
+        proxyUrl,
+        { headers }
       )
     }
     request.agent = cachedAgents.httpProxyAgent
   } else {
     if (!cachedAgents.httpsProxyAgent) {
-      cachedAgents.httpsProxyAgent = new dist.HttpsProxyAgent(proxyUrl)
+      cachedAgents.httpsProxyAgent = new dist.HttpsProxyAgent(proxyUrl, {
+        headers
+      })
     }
     request.agent = cachedAgents.httpsProxyAgent
   }
@@ -52959,14 +54056,14 @@ function typeGuards_isBinaryBody(body) {
     (body instanceof Uint8Array ||
       typeGuards_isReadableStream(body) ||
       typeof body === "function" ||
-      (typeof Blob !== "undefined" && body instanceof Blob))
+      body instanceof Blob)
   )
 }
 function typeGuards_isReadableStream(x) {
   return isNodeReadableStream(x) || isWebReadableStream(x)
 }
 function typeGuards_isBlob(x) {
-  return typeof Blob !== "undefined" && x instanceof Blob
+  return typeof x.stream === "function"
 } // CONCATENATED MODULE: ./node_modules/@typespec/ts-http-runtime/dist/esm/util/concat.js
 //# sourceMappingURL=typeGuards.js.map
 // Copyright (c) Microsoft Corporation.
@@ -53638,14 +54735,11 @@ async function sendRequest_sendRequest(
  * @returns returns the content-type
  */
 function getRequestContentType(options = {}) {
-  if (options.contentType) {
-    return options.contentType
-  }
-  const headerContentType = options.headers?.["content-type"]
-  if (typeof headerContentType === "string") {
-    return headerContentType
-  }
-  return getContentType(options.body)
+  return (
+    options.contentType ??
+    options.headers?.["content-type"] ??
+    getContentType(options.body)
+  )
 }
 /**
  * Function to determine the content-type of a body
@@ -53718,11 +54812,8 @@ function getRequestBody(body, contentType = "") {
   if (isBlob(body)) {
     return { body }
   }
-  if (isReadableStream(body)) {
+  if (isReadableStream(body) || typeof body === "function") {
     return { body }
-  }
-  if (typeof body === "function") {
-    return { body: body }
   }
   if (ArrayBuffer.isView(body)) {
     return { body: body instanceof Uint8Array ? body : JSON.stringify(body) }
@@ -59544,11 +60635,11 @@ class Expression {
    * @param {Object} options - Configuration options
    * @param {string} options.separator - Path separator (default: '.')
    */
-  constructor(pattern, options = {}, data) {
+  constructor(pattern, options = {}) {
     this.pattern = pattern
     this.separator = options.separator || "."
     this.segments = this._parse(pattern)
-    this.data = data
+
     // Cache expensive checks for performance (O(1) instead of O(n))
     this._hasDeepWildcard = this.segments.some(
       seg => seg.type === "deep-wildcard"
@@ -59767,164 +60858,11 @@ class Expression {
   }
 } // CONCATENATED MODULE: ./node_modules/path-expression-matcher/src/Matcher.js
 /**
- * MatcherView - A lightweight read-only view over a Matcher's internal state.
- *
- * Created once by Matcher and reused across all callbacks. Holds a direct
- * reference to the parent Matcher so it always reflects current parser state
- * with zero copying or freezing overhead.
- *
- * Users receive this via {@link Matcher#readOnly} or directly from parser
- * callbacks. It exposes all query and matching methods but has no mutation
- * methods — misuse is caught at the TypeScript level rather than at runtime.
- *
- * @example
- * const matcher = new Matcher();
- * const view = matcher.readOnly();
- *
- * matcher.push("root", {});
- * view.getCurrentTag(); // "root"
- * view.getDepth();      // 1
- */
-class MatcherView {
-  /**
-   * @param {Matcher} matcher - The parent Matcher instance to read from.
-   */
-  constructor(matcher) {
-    this._matcher = matcher
-  }
-
-  /**
-   * Get the path separator used by the parent matcher.
-   * @returns {string}
-   */
-  get separator() {
-    return this._matcher.separator
-  }
-
-  /**
-   * Get current tag name.
-   * @returns {string|undefined}
-   */
-  getCurrentTag() {
-    const path = this._matcher.path
-    return path.length > 0 ? path[path.length - 1].tag : undefined
-  }
-
-  /**
-   * Get current namespace.
-   * @returns {string|undefined}
-   */
-  getCurrentNamespace() {
-    const path = this._matcher.path
-    return path.length > 0 ? path[path.length - 1].namespace : undefined
-  }
-
-  /**
-   * Get current node's attribute value.
-   * @param {string} attrName
-   * @returns {*}
-   */
-  getAttrValue(attrName) {
-    const path = this._matcher.path
-    if (path.length === 0) return undefined
-    return path[path.length - 1].values?.[attrName]
-  }
-
-  /**
-   * Check if current node has an attribute.
-   * @param {string} attrName
-   * @returns {boolean}
-   */
-  hasAttr(attrName) {
-    const path = this._matcher.path
-    if (path.length === 0) return false
-    const current = path[path.length - 1]
-    return current.values !== undefined && attrName in current.values
-  }
-
-  /**
-   * Get current node's sibling position (child index in parent).
-   * @returns {number}
-   */
-  getPosition() {
-    const path = this._matcher.path
-    if (path.length === 0) return -1
-    return path[path.length - 1].position ?? 0
-  }
-
-  /**
-   * Get current node's repeat counter (occurrence count of this tag name).
-   * @returns {number}
-   */
-  getCounter() {
-    const path = this._matcher.path
-    if (path.length === 0) return -1
-    return path[path.length - 1].counter ?? 0
-  }
-
-  /**
-   * Get current node's sibling index (alias for getPosition).
-   * @returns {number}
-   * @deprecated Use getPosition() or getCounter() instead
-   */
-  getIndex() {
-    return this.getPosition()
-  }
-
-  /**
-   * Get current path depth.
-   * @returns {number}
-   */
-  getDepth() {
-    return this._matcher.path.length
-  }
-
-  /**
-   * Get path as string.
-   * @param {string} [separator] - Optional separator (uses default if not provided)
-   * @param {boolean} [includeNamespace=true]
-   * @returns {string}
-   */
-  toString(separator, includeNamespace = true) {
-    return this._matcher.toString(separator, includeNamespace)
-  }
-
-  /**
-   * Get path as array of tag names.
-   * @returns {string[]}
-   */
-  toArray() {
-    return this._matcher.path.map(n => n.tag)
-  }
-
-  /**
-   * Match current path against an Expression.
-   * @param {Expression} expression
-   * @returns {boolean}
-   */
-  matches(expression) {
-    return this._matcher.matches(expression)
-  }
-
-  /**
-   * Match any expression in the given set against the current path.
-   * @param {ExpressionSet} exprSet
-   * @returns {boolean}
-   */
-  matchesAny(exprSet) {
-    return exprSet.matchesAny(this._matcher)
-  }
-}
-
-/**
- * Matcher - Tracks current path in XML/JSON tree and matches against Expressions.
+ * Matcher - Tracks current path in XML/JSON tree and matches against Expressions
  *
  * The matcher maintains a stack of nodes representing the current path from root to
  * current tag. It only stores attribute values for the current (top) node to minimize
  * memory usage. Sibling tracking is used to auto-calculate position and counter.
- *
- * Use {@link Matcher#readOnly} to obtain a {@link MatcherView} safe to pass to
- * user callbacks — it always reflects current state with no Proxy overhead.
  *
  * @example
  * const matcher = new Matcher();
@@ -59935,35 +60873,46 @@ class MatcherView {
  * const expr = new Expression("root.users.user");
  * matcher.matches(expr); // true
  */
+
+/**
+ * Names of methods that mutate Matcher state.
+ * Any attempt to call these on a read-only view throws a TypeError.
+ * @type {Set<string>}
+ */
+const MUTATING_METHODS = new Set([
+  "push",
+  "pop",
+  "reset",
+  "updateCurrent",
+  "restore"
+])
+
 class Matcher {
   /**
-   * Create a new Matcher.
-   * @param {Object} [options={}]
-   * @param {string} [options.separator='.'] - Default path separator
+   * Create a new Matcher
+   * @param {Object} options - Configuration options
+   * @param {string} options.separator - Default path separator (default: '.')
    */
   constructor(options = {}) {
     this.separator = options.separator || "."
     this.path = []
     this.siblingStacks = []
-    // Each path node: { tag, values, position, counter, namespace? }
+    // Each path node: { tag: string, values: object, position: number, counter: number }
     // values only present for current (last) node
     // Each siblingStacks entry: Map<tagName, count> tracking occurrences at each level
-    this._pathStringCache = null
-    this._view = new MatcherView(this)
   }
 
   /**
-   * Push a new tag onto the path.
-   * @param {string} tagName
-   * @param {Object|null} [attrValues=null]
-   * @param {string|null} [namespace=null]
+   * Push a new tag onto the path
+   * @param {string} tagName - Name of the tag
+   * @param {Object} attrValues - Attribute key-value pairs for current node (optional)
+   * @param {string} namespace - Namespace for the tag (optional)
    */
   push(tagName, attrValues = null, namespace = null) {
-    this._pathStringCache = null
-
     // Remove values from previous current node (now becoming ancestor)
     if (this.path.length > 0) {
-      this.path[this.path.length - 1].values = undefined
+      const prev = this.path[this.path.length - 1]
+      prev.values = undefined
     }
 
     // Get or create sibling tracking for current level
@@ -59996,10 +60945,12 @@ class Matcher {
       counter: counter
     }
 
+    // Store namespace if provided
     if (namespace !== null && namespace !== undefined) {
       node.namespace = namespace
     }
 
+    // Store values only for current node
     if (attrValues !== null && attrValues !== undefined) {
       node.values = attrValues
     }
@@ -60008,15 +60959,19 @@ class Matcher {
   }
 
   /**
-   * Pop the last tag from the path.
+   * Pop the last tag from the path
    * @returns {Object|undefined} The popped node
    */
   pop() {
-    if (this.path.length === 0) return undefined
-    this._pathStringCache = null
+    if (this.path.length === 0) {
+      return undefined
+    }
 
     const node = this.path.pop()
 
+    // Clean up sibling tracking for levels deeper than current
+    // After pop, path.length is the new depth
+    // We need to clean up siblingStacks[path.length + 1] and beyond
     if (this.siblingStacks.length > this.path.length + 1) {
       this.siblingStacks.length = this.path.length + 1
     }
@@ -60025,9 +60980,9 @@ class Matcher {
   }
 
   /**
-   * Update current node's attribute values.
-   * Useful when attributes are parsed after push.
-   * @param {Object} attrValues
+   * Update current node's attribute values
+   * Useful when attributes are parsed after push
+   * @param {Object} attrValues - Attribute values
    */
   updateCurrent(attrValues) {
     if (this.path.length > 0) {
@@ -60039,7 +60994,7 @@ class Matcher {
   }
 
   /**
-   * Get current tag name.
+   * Get current tag name
    * @returns {string|undefined}
    */
   getCurrentTag() {
@@ -60049,7 +61004,7 @@ class Matcher {
   }
 
   /**
-   * Get current namespace.
+   * Get current namespace
    * @returns {string|undefined}
    */
   getCurrentNamespace() {
@@ -60059,18 +61014,19 @@ class Matcher {
   }
 
   /**
-   * Get current node's attribute value.
-   * @param {string} attrName
-   * @returns {*}
+   * Get current node's attribute value
+   * @param {string} attrName - Attribute name
+   * @returns {*} Attribute value or undefined
    */
   getAttrValue(attrName) {
     if (this.path.length === 0) return undefined
-    return this.path[this.path.length - 1].values?.[attrName]
+    const current = this.path[this.path.length - 1]
+    return current.values?.[attrName]
   }
 
   /**
-   * Check if current node has an attribute.
-   * @param {string} attrName
+   * Check if current node has an attribute
+   * @param {string} attrName - Attribute name
    * @returns {boolean}
    */
   hasAttr(attrName) {
@@ -60080,7 +61036,7 @@ class Matcher {
   }
 
   /**
-   * Get current node's sibling position (child index in parent).
+   * Get current node's sibling position (child index in parent)
    * @returns {number}
    */
   getPosition() {
@@ -60089,7 +61045,7 @@ class Matcher {
   }
 
   /**
-   * Get current node's repeat counter (occurrence count of this tag name).
+   * Get current node's repeat counter (occurrence count of this tag name)
    * @returns {number}
    */
   getCounter() {
@@ -60098,7 +61054,7 @@ class Matcher {
   }
 
   /**
-   * Get current node's sibling index (alias for getPosition).
+   * Get current node's sibling index (alias for getPosition for backward compatibility)
    * @returns {number}
    * @deprecated Use getPosition() or getCounter() instead
    */
@@ -60107,7 +61063,7 @@ class Matcher {
   }
 
   /**
-   * Get current path depth.
+   * Get current path depth
    * @returns {number}
    */
   getDepth() {
@@ -60115,35 +61071,25 @@ class Matcher {
   }
 
   /**
-   * Get path as string.
-   * @param {string} [separator] - Optional separator (uses default if not provided)
-   * @param {boolean} [includeNamespace=true]
+   * Get path as string
+   * @param {string} separator - Optional separator (uses default if not provided)
+   * @param {boolean} includeNamespace - Whether to include namespace in output (default: true)
    * @returns {string}
    */
   toString(separator, includeNamespace = true) {
     const sep = separator || this.separator
-    const isDefault = sep === this.separator && includeNamespace === true
-
-    if (isDefault) {
-      if (this._pathStringCache !== null) {
-        return this._pathStringCache
-      }
-      const result = this.path
-        .map(n => (n.namespace ? `${n.namespace}:${n.tag}` : n.tag))
-        .join(sep)
-      this._pathStringCache = result
-      return result
-    }
-
     return this.path
-      .map(n =>
-        includeNamespace && n.namespace ? `${n.namespace}:${n.tag}` : n.tag
-      )
+      .map(n => {
+        if (includeNamespace && n.namespace) {
+          return `${n.namespace}:${n.tag}`
+        }
+        return n.tag
+      })
       .join(sep)
   }
 
   /**
-   * Get path as array of tag names.
+   * Get path as array of tag names
    * @returns {string[]}
    */
   toArray() {
@@ -60151,18 +61097,17 @@ class Matcher {
   }
 
   /**
-   * Reset the path to empty.
+   * Reset the path to empty
    */
   reset() {
-    this._pathStringCache = null
     this.path = []
     this.siblingStacks = []
   }
 
   /**
-   * Match current path against an Expression.
-   * @param {Expression} expression
-   * @returns {boolean}
+   * Match current path against an Expression
+   * @param {Expression} expression - The expression to match against
+   * @returns {boolean} True if current path matches the expression
    */
   matches(expression) {
     const segments = expression.segments
@@ -60171,29 +61116,32 @@ class Matcher {
       return false
     }
 
+    // Handle deep wildcard patterns
     if (expression.hasDeepWildcard()) {
       return this._matchWithDeepWildcard(segments)
     }
 
+    // Simple path matching (no deep wildcards)
     return this._matchSimple(segments)
   }
 
   /**
+   * Match simple path (no deep wildcards)
    * @private
    */
   _matchSimple(segments) {
+    // Path must be same length as segments
     if (this.path.length !== segments.length) {
       return false
     }
 
+    // Match each segment bottom-to-top
     for (let i = 0; i < segments.length; i++) {
-      if (
-        !this._matchSegment(
-          segments[i],
-          this.path[i],
-          i === this.path.length - 1
-        )
-      ) {
+      const segment = segments[i]
+      const node = this.path[i]
+      const isCurrentNode = i === this.path.length - 1
+
+      if (!this._matchSegment(segment, node, isCurrentNode)) {
         return false
       }
     }
@@ -60202,33 +61150,32 @@ class Matcher {
   }
 
   /**
+   * Match path with deep wildcards
    * @private
    */
   _matchWithDeepWildcard(segments) {
-    let pathIdx = this.path.length - 1
-    let segIdx = segments.length - 1
+    let pathIdx = this.path.length - 1 // Start from current node (bottom)
+    let segIdx = segments.length - 1 // Start from last segment
 
     while (segIdx >= 0 && pathIdx >= 0) {
       const segment = segments[segIdx]
 
       if (segment.type === "deep-wildcard") {
+        // ".." matches zero or more levels
         segIdx--
 
         if (segIdx < 0) {
+          // Pattern ends with "..", always matches
           return true
         }
 
+        // Find where next segment matches in the path
         const nextSeg = segments[segIdx]
         let found = false
 
         for (let i = pathIdx; i >= 0; i--) {
-          if (
-            this._matchSegment(
-              nextSeg,
-              this.path[i],
-              i === this.path.length - 1
-            )
-          ) {
+          const isCurrentNode = i === this.path.length - 1
+          if (this._matchSegment(nextSeg, this.path[i], isCurrentNode)) {
             pathIdx = i - 1
             segIdx--
             found = true
@@ -60240,13 +61187,9 @@ class Matcher {
           return false
         }
       } else {
-        if (
-          !this._matchSegment(
-            segment,
-            this.path[pathIdx],
-            pathIdx === this.path.length - 1
-          )
-        ) {
+        // Regular segment
+        const isCurrentNode = pathIdx === this.path.length - 1
+        if (!this._matchSegment(segment, this.path[pathIdx], isCurrentNode)) {
           return false
         }
         pathIdx--
@@ -60254,25 +61197,38 @@ class Matcher {
       }
     }
 
+    // All segments must be consumed
     return segIdx < 0
   }
 
   /**
+   * Match a single segment against a node
    * @private
+   * @param {Object} segment - Segment from Expression
+   * @param {Object} node - Node from path
+   * @param {boolean} isCurrentNode - Whether this is the current (last) node
+   * @returns {boolean}
    */
   _matchSegment(segment, node, isCurrentNode) {
+    // Match tag name (* is wildcard)
     if (segment.tag !== "*" && segment.tag !== node.tag) {
       return false
     }
 
+    // Match namespace if specified in segment
     if (segment.namespace !== undefined) {
+      // Segment has namespace - node must match it
       if (segment.namespace !== "*" && segment.namespace !== node.namespace) {
         return false
       }
     }
+    // If segment has no namespace, it matches nodes with or without namespace
 
+    // Match attribute name (check if node has this attribute)
+    // Can only check for current node since ancestors don't have values
     if (segment.attrName !== undefined) {
       if (!isCurrentNode) {
+        // Can't check attributes for ancestor nodes (values not stored)
         return false
       }
 
@@ -60280,17 +61236,20 @@ class Matcher {
         return false
       }
 
+      // Match attribute value (only possible for current node)
       if (segment.attrValue !== undefined) {
-        if (
-          String(node.values[segment.attrName]) !== String(segment.attrValue)
-        ) {
+        const actualValue = node.values[segment.attrName]
+        // Both should be strings
+        if (String(actualValue) !== String(segment.attrValue)) {
           return false
         }
       }
     }
 
+    // Match position (only for current node)
     if (segment.position !== undefined) {
       if (!isCurrentNode) {
+        // Can't check position for ancestor nodes
         return false
       }
 
@@ -60302,11 +61261,10 @@ class Matcher {
         return false
       } else if (segment.position === "even" && counter % 2 !== 0) {
         return false
-      } else if (
-        segment.position === "nth" &&
-        counter !== segment.positionValue
-      ) {
-        return false
+      } else if (segment.position === "nth") {
+        if (counter !== segment.positionValue) {
+          return false
+        }
       }
     }
 
@@ -60314,17 +61272,8 @@ class Matcher {
   }
 
   /**
-   * Match any expression in the given set against the current path.
-   * @param {ExpressionSet} exprSet
-   * @returns {boolean}
-   */
-  matchesAny(exprSet) {
-    return exprSet.matchesAny(this)
-  }
-
-  /**
-   * Create a snapshot of current state.
-   * @returns {Object}
+   * Create a snapshot of current state
+   * @returns {Object} State snapshot
    */
   snapshot() {
     return {
@@ -60334,33 +61283,89 @@ class Matcher {
   }
 
   /**
-   * Restore state from snapshot.
-   * @param {Object} snapshot
+   * Restore state from snapshot
+   * @param {Object} snapshot - State snapshot
    */
   restore(snapshot) {
-    this._pathStringCache = null
     this.path = snapshot.path.map(node => ({ ...node }))
     this.siblingStacks = snapshot.siblingStacks.map(map => new Map(map))
   }
 
   /**
-   * Return the read-only {@link MatcherView} for this matcher.
+   * Return a read-only view of this matcher.
    *
-   * The same instance is returned on every call — no allocation occurs.
-   * It always reflects the current parser state and is safe to pass to
-   * user callbacks without risk of accidental mutation.
+   * The returned object exposes all query/inspection methods but throws a
+   * TypeError if any state-mutating method is called (`push`, `pop`, `reset`,
+   * `updateCurrent`, `restore`).  Property reads (e.g. `.path`, `.separator`)
+   * are allowed but the returned arrays/objects are frozen so callers cannot
+   * mutate internal state through them either.
    *
-   * @returns {MatcherView}
+   * @returns {ReadOnlyMatcher} A proxy that forwards read operations and blocks writes.
    *
    * @example
-   * const view = matcher.readOnly();
-   * // pass view to callbacks — it stays in sync automatically
-   * view.matches(expr);       // ✓
-   * view.getCurrentTag();     // ✓
-   * // view.push(...)         // ✗ method does not exist — caught by TypeScript
+   * const matcher = new Matcher();
+   * matcher.push("root", {});
+   *
+   * const ro = matcher.readOnly();
+   * ro.matches(expr);      // ✓ works
+   * ro.getCurrentTag();    // ✓ works
+   * ro.push("child", {}); // ✗ throws TypeError
+   * ro.reset();            // ✗ throws TypeError
    */
   readOnly() {
-    return this._view
+    const self = this
+
+    return new Proxy(self, {
+      get(target, prop, receiver) {
+        // Block mutating methods
+        if (MUTATING_METHODS.has(prop)) {
+          return () => {
+            throw new TypeError(
+              `Cannot call '${prop}' on a read-only Matcher. ` +
+                `Obtain a writable instance to mutate state.`
+            )
+          }
+        }
+
+        const value = Reflect.get(target, prop, receiver)
+
+        // Freeze array/object properties so callers can't mutate internal
+        // state through direct property access (e.g. matcher.path.push(...))
+        if (prop === "path" || prop === "siblingStacks") {
+          return Object.freeze(
+            Array.isArray(value)
+              ? value.map(
+                  item =>
+                    item instanceof Map
+                      ? Object.freeze(new Map(item)) // freeze a copy of each Map
+                      : Object.freeze({ ...item }) // freeze a copy of each node
+                )
+              : value
+          )
+        }
+
+        // Bind methods so `this` inside them still refers to the real Matcher
+        if (typeof value === "function") {
+          return value.bind(target)
+        }
+
+        return value
+      },
+
+      // Prevent any property assignment on the read-only view
+      set(_target, prop) {
+        throw new TypeError(
+          `Cannot set property '${String(prop)}' on a read-only Matcher.`
+        )
+      },
+
+      // Prevent property deletion
+      deleteProperty(_target, prop) {
+        throw new TypeError(
+          `Cannot delete property '${String(prop)}' from a read-only Matcher.`
+        )
+      }
+    })
   }
 } // CONCATENATED MODULE: ./node_modules/fast-xml-builder/src/orderedJs2Xml.js
 const EOL = "\n"
@@ -60445,18 +61450,13 @@ function arrToStr(arr, options, indentation, matcher, stopNodeExpressions) {
       if (isPreviousElementTag) {
         xmlStr += indentation
       }
-      const val = tagObj[tagName][0][options.textNodeName]
-      const safeVal = String(val).replace(/\]\]>/g, "]]]]><![CDATA[>")
-      xmlStr += `<![CDATA[${safeVal}]]>`
+      xmlStr += `<![CDATA[${tagObj[tagName][0][options.textNodeName]}]]>`
       isPreviousElementTag = false
       matcher.pop()
       continue
     } else if (tagName === options.commentPropName) {
-      const val = tagObj[tagName][0][options.textNodeName]
-      const safeVal = String(val)
-        .replace(/--/g, "- -") // -- is illegal anywhere in comment content
-        .replace(/-$/, "- ") // trailing - would form -- with the closing -->
-      xmlStr += indentation + `<!--${safeVal}-->`
+      xmlStr +=
+        indentation + `<!--${tagObj[tagName][0][options.textNodeName]}-->`
       isPreviousElementTag = true
       matcher.pop()
       continue
@@ -60670,11 +61670,7 @@ function replaceEntitiesValue(textValue, options) {
     }
   }
   return textValue
-}
-
-function cdataVal(val) {}
-
-function commentVal(val) {} // CONCATENATED MODULE: ./node_modules/fast-xml-builder/src/ignoreAttributes.js
+} // CONCATENATED MODULE: ./node_modules/fast-xml-builder/src/ignoreAttributes.js
 function getIgnoreAttributesFn(ignoreAttributes) {
   if (typeof ignoreAttributes === "function") {
     return ignoreAttributes
@@ -61289,16 +62285,12 @@ Builder.prototype.buildTextValNode = function (
     this.options.cdataPropName !== false &&
     key === this.options.cdataPropName
   ) {
-    const safeVal = String(val).replace(/\]\]>/g, "]]]]><![CDATA[>")
-    return this.indentate(level) + `<![CDATA[${safeVal}]]>` + this.newLine
+    return this.indentate(level) + `<![CDATA[${val}]]>` + this.newLine
   } else if (
     this.options.commentPropName !== false &&
     key === this.options.commentPropName
   ) {
-    const safeVal = String(val)
-      .replace(/--/g, "- -") // -- is illegal anywhere in comment content
-      .replace(/-$/, "- ") // trailing - would form -- with the closing -->
-    return this.indentate(level) + `<!--${safeVal}-->` + this.newLine
+    return this.indentate(level) + `<!--${val}-->` + this.newLine
   } else if (key[0] === "?") {
     //PI tag
     return this.indentate(level) + "<" + key + attrStr + "?" + this.tagEndChar
@@ -61993,7 +62985,6 @@ const OptionsBuilder_defaultOptions = {
   unpairedTags: [],
   processEntities: true,
   htmlEntities: false,
-  entityDecoder: null,
   ignoreDeclaration: false,
   ignorePiTags: false,
   transformTagName: false,
@@ -62045,19 +63036,18 @@ function validatePropertyName(propertyName, optionName) {
  * @param {boolean|object} value
  * @returns {object} Always returns normalized object
  */
-function normalizeProcessEntities(value, htmlEntities) {
+function normalizeProcessEntities(value) {
   // Boolean backward compatibility
   if (typeof value === "boolean") {
     return {
       enabled: value, // true or false
       maxEntitySize: 10000,
-      maxExpansionDepth: 10000,
-      maxTotalExpansions: Infinity,
+      maxExpansionDepth: 10,
+      maxTotalExpansions: 1000,
       maxExpandedLength: 100000,
-      maxEntityCount: 1000,
+      maxEntityCount: 100,
       allowedTags: null,
-      tagFilter: null,
-      appliesTo: "all"
+      tagFilter: null
     }
   }
 
@@ -62066,13 +63056,12 @@ function normalizeProcessEntities(value, htmlEntities) {
     return {
       enabled: value.enabled !== false,
       maxEntitySize: Math.max(1, value.maxEntitySize ?? 10000),
-      maxExpansionDepth: Math.max(1, value.maxExpansionDepth ?? 10000),
-      maxTotalExpansions: Math.max(1, value.maxTotalExpansions ?? Infinity),
+      maxExpansionDepth: Math.max(1, value.maxExpansionDepth ?? 10),
+      maxTotalExpansions: Math.max(1, value.maxTotalExpansions ?? 1000),
       maxExpandedLength: Math.max(1, value.maxExpandedLength ?? 100000),
-      maxEntityCount: Math.max(1, value.maxEntityCount ?? 1000),
+      maxEntityCount: Math.max(1, value.maxEntityCount ?? 100),
       allowedTags: value.allowedTags ?? null,
-      tagFilter: value.tagFilter ?? null,
-      appliesTo: value.appliesTo ?? "all"
+      tagFilter: value.tagFilter ?? null
     }
   }
 
@@ -62103,11 +63092,8 @@ const buildOptions = function (options) {
   }
 
   // Always normalize processEntities for backward compatibility and validation
-  built.processEntities = normalizeProcessEntities(
-    built.processEntities,
-    built.htmlEntities
-  )
-  built.unpairedTagsSet = new Set(built.unpairedTags)
+  built.processEntities = normalizeProcessEntities(built.processEntities)
+
   // Convert old-style stopNodes for backward compatibility
   if (built.stopNodes && Array.isArray(built.stopNodes)) {
     built.stopNodes = built.stopNodes.map(node => {
@@ -62207,8 +63193,11 @@ class DocTypeReader {
                 )
               }
               //const escaped = entityName.replace(/[.\-+*:]/g, '\\.');
-              //const escaped = entityName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-              entities[entityName] = val
+              const escaped = entityName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+              entities[entityName] = {
+                regx: RegExp(`&${escaped};`, "g"),
+                val: val
+              }
               entityCount++
             }
           } else if (hasBody && hasSeq(xmlData, "!ELEMENT", i)) {
@@ -62803,1963 +63792,6 @@ function ignoreAttributes_getIgnoreAttributesFn(ignoreAttributes) {
     }
   }
   return () => false
-} // CONCATENATED MODULE: ./node_modules/path-expression-matcher/src/ExpressionSet.js
-/**
- * ExpressionSet - An indexed collection of Expressions for efficient bulk matching
- *
- * Instead of iterating all expressions on every tag, ExpressionSet pre-indexes
- * them at insertion time by depth and terminal tag name. At match time, only
- * the relevant bucket is evaluated — typically reducing checks from O(E) to O(1)
- * lookup plus O(small bucket) matches.
- *
- * Three buckets are maintained:
- *  - `_byDepthAndTag`  — exact depth + exact tag name  (tightest, used first)
- *  - `_wildcardByDepth` — exact depth + wildcard tag `*` (depth-matched only)
- *  - `_deepWildcards`  — expressions containing `..`  (cannot be depth-indexed)
- *
- * @example
- * import { Expression, ExpressionSet } from 'fast-xml-tagger';
- *
- * // Build once at config time
- * const stopNodes = new ExpressionSet();
- * stopNodes.add(new Expression('root.users.user'));
- * stopNodes.add(new Expression('root.config.setting'));
- * stopNodes.add(new Expression('..script'));
- *
- * // Query on every tag — hot path
- * if (stopNodes.matchesAny(matcher)) { ... }
- */
-class ExpressionSet {
-  constructor() {
-    /** @type {Map<string, import('./Expression.js').default[]>} depth:tag → expressions */
-    this._byDepthAndTag = new Map()
-
-    /** @type {Map<number, import('./Expression.js').default[]>} depth → wildcard-tag expressions */
-    this._wildcardByDepth = new Map()
-
-    /** @type {import('./Expression.js').default[]} expressions containing deep wildcard (..) */
-    this._deepWildcards = []
-
-    /** @type {Set<string>} pattern strings already added — used for deduplication */
-    this._patterns = new Set()
-
-    /** @type {boolean} whether the set is sealed against further additions */
-    this._sealed = false
-  }
-
-  /**
-   * Add an Expression to the set.
-   * Duplicate patterns (same pattern string) are silently ignored.
-   *
-   * @param {import('./Expression.js').default} expression - A pre-constructed Expression instance
-   * @returns {this} for chaining
-   * @throws {TypeError} if called after seal()
-   *
-   * @example
-   * set.add(new Expression('root.users.user'));
-   * set.add(new Expression('..script'));
-   */
-  add(expression) {
-    if (this._sealed) {
-      throw new TypeError(
-        "ExpressionSet is sealed. Create a new ExpressionSet to add more expressions."
-      )
-    }
-
-    // Deduplicate by pattern string
-    if (this._patterns.has(expression.pattern)) return this
-    this._patterns.add(expression.pattern)
-
-    if (expression.hasDeepWildcard()) {
-      this._deepWildcards.push(expression)
-      return this
-    }
-
-    const depth = expression.length
-    const lastSeg = expression.segments[expression.segments.length - 1]
-    const tag = lastSeg?.tag
-
-    if (!tag || tag === "*") {
-      // Can index by depth but not by tag
-      if (!this._wildcardByDepth.has(depth))
-        this._wildcardByDepth.set(depth, [])
-      this._wildcardByDepth.get(depth).push(expression)
-    } else {
-      // Tightest bucket: depth + tag
-      const key = `${depth}:${tag}`
-      if (!this._byDepthAndTag.has(key)) this._byDepthAndTag.set(key, [])
-      this._byDepthAndTag.get(key).push(expression)
-    }
-
-    return this
-  }
-
-  /**
-   * Add multiple expressions at once.
-   *
-   * @param {import('./Expression.js').default[]} expressions - Array of Expression instances
-   * @returns {this} for chaining
-   *
-   * @example
-   * set.addAll([
-   *   new Expression('root.users.user'),
-   *   new Expression('root.config.setting'),
-   * ]);
-   */
-  addAll(expressions) {
-    for (const expr of expressions) this.add(expr)
-    return this
-  }
-
-  /**
-   * Check whether a pattern string is already present in the set.
-   *
-   * @param {import('./Expression.js').default} expression
-   * @returns {boolean}
-   */
-  has(expression) {
-    return this._patterns.has(expression.pattern)
-  }
-
-  /**
-   * Number of expressions in the set.
-   * @type {number}
-   */
-  get size() {
-    return this._patterns.size
-  }
-
-  /**
-   * Seal the set against further modifications.
-   * Useful to prevent accidental mutations after config is built.
-   * Calling add() or addAll() on a sealed set throws a TypeError.
-   *
-   * @returns {this}
-   */
-  seal() {
-    this._sealed = true
-    return this
-  }
-
-  /**
-   * Whether the set has been sealed.
-   * @type {boolean}
-   */
-  get isSealed() {
-    return this._sealed
-  }
-
-  /**
-   * Test whether the matcher's current path matches any expression in the set.
-   *
-   * Evaluation order (cheapest → most expensive):
-   *  1. Exact depth + tag bucket  — O(1) lookup, typically 0–2 expressions
-   *  2. Depth-only wildcard bucket — O(1) lookup, rare
-   *  3. Deep-wildcard list         — always checked, but usually small
-   *
-   * @param {import('./Matcher.js').default} matcher - Matcher instance (or readOnly view)
-   * @returns {boolean} true if any expression matches the current path
-   *
-   * @example
-   * if (stopNodes.matchesAny(matcher)) {
-   *   // handle stop node
-   * }
-   */
-  matchesAny(matcher) {
-    return this.findMatch(matcher) !== null
-  }
-  /**
-   * Find and return the first Expression that matches the matcher's current path.
-   *
-   * Uses the same evaluation order as matchesAny (cheapest → most expensive):
-   *  1. Exact depth + tag bucket
-   *  2. Depth-only wildcard bucket
-   *  3. Deep-wildcard list
-   *
-   * @param {import('./Matcher.js').default} matcher - Matcher instance (or readOnly view)
-   * @returns {import('./Expression.js').default | null} the first matching Expression, or null
-   *
-   * @example
-   * const expr = stopNodes.findMatch(matcher);
-   * if (expr) {
-   *   // access expr.config, expr.pattern, etc.
-   * }
-   */
-  findMatch(matcher) {
-    const depth = matcher.getDepth()
-    const tag = matcher.getCurrentTag()
-
-    // 1. Tightest bucket — most expressions live here
-    const exactKey = `${depth}:${tag}`
-    const exactBucket = this._byDepthAndTag.get(exactKey)
-    if (exactBucket) {
-      for (let i = 0; i < exactBucket.length; i++) {
-        if (matcher.matches(exactBucket[i])) return exactBucket[i]
-      }
-    }
-
-    // 2. Depth-matched wildcard-tag expressions
-    const wildcardBucket = this._wildcardByDepth.get(depth)
-    if (wildcardBucket) {
-      for (let i = 0; i < wildcardBucket.length; i++) {
-        if (matcher.matches(wildcardBucket[i])) return wildcardBucket[i]
-      }
-    }
-
-    // 3. Deep wildcards — cannot be pre-filtered by depth or tag
-    for (let i = 0; i < this._deepWildcards.length; i++) {
-      if (matcher.matches(this._deepWildcards[i])) return this._deepWildcards[i]
-    }
-
-    return null
-  }
-} // CONCATENATED MODULE: ./node_modules/@nodable/entities/src/entities.js
-
-// ---------------------------------------------------------------------------
-// Complete HTML5 named entity reference
-// Organized by logical categories for easy maintenance and selective importing
-// ---------------------------------------------------------------------------
-
-/**
- * Basic Latin & Special Characters
- * @type {Record<string, string>}
- */
-const BASIC_LATIN = {
-  amp: "&",
-  AMP: "&",
-  lt: "<",
-  LT: "<",
-  gt: ">",
-  GT: ">",
-  quot: '"',
-  QUOT: '"',
-  apos: "'",
-  lsquo: "‘",
-  rsquo: "’",
-  ldquo: "“",
-  rdquo: "”",
-  lsquor: "‚",
-  rsquor: "’",
-  ldquor: "„",
-  bdquo: "„",
-  comma: ",",
-  period: ".",
-  colon: ":",
-  semi: ";",
-  excl: "!",
-  quest: "?",
-  num: "#",
-  dollar: "$",
-  percent: "%",
-  amp: "&",
-  ast: "*",
-  commat: "@",
-  lowbar: "_",
-  verbar: "|",
-  vert: "|",
-  sol: "/",
-  bsol: "\\",
-  lbrace: "{",
-  rbrace: "}",
-  lbrack: "[",
-  rbrack: "]",
-  lpar: "(",
-  rpar: ")",
-  nbsp: "\u00a0",
-  iexcl: "¡",
-  cent: "¢",
-  pound: "£",
-  curren: "¤",
-  yen: "¥",
-  brvbar: "¦",
-  sect: "§",
-  uml: "¨",
-  copy: "©",
-  COPY: "©",
-  ordf: "ª",
-  laquo: "«",
-  not: "¬",
-  shy: "\u00ad",
-  reg: "®",
-  REG: "®",
-  macr: "¯",
-  deg: "°",
-  plusmn: "±",
-  sup2: "²",
-  sup3: "³",
-  acute: "´",
-  micro: "µ",
-  para: "¶",
-  middot: "·",
-  cedil: "¸",
-  sup1: "¹",
-  ordm: "º",
-  raquo: "»",
-  frac14: "¼",
-  frac12: "½",
-  half: "½",
-  frac34: "¾",
-  iquest: "¿",
-  times: "×",
-  div: "÷",
-  divide: "÷"
-}
-
-/**
- * Latin Extended & Accented Letters (A-Z)
- * @type {Record<string, string>}
- */
-const LATIN_ACCENTS = {
-  Agrave: "À",
-  agrave: "à",
-  Aacute: "Á",
-  aacute: "á",
-  Acirc: "Â",
-  acirc: "â",
-  Atilde: "Ã",
-  atilde: "ã",
-  Auml: "Ä",
-  auml: "ä",
-  Aring: "Å",
-  aring: "å",
-  AElig: "Æ",
-  aelig: "æ",
-  Ccedil: "Ç",
-  ccedil: "ç",
-  Egrave: "È",
-  egrave: "è",
-  Eacute: "É",
-  eacute: "é",
-  Ecirc: "Ê",
-  ecirc: "ê",
-  Euml: "Ë",
-  euml: "ë",
-  Igrave: "Ì",
-  igrave: "ì",
-  Iacute: "Í",
-  iacute: "í",
-  Icirc: "Î",
-  icirc: "î",
-  Iuml: "Ï",
-  iuml: "ï",
-  ETH: "Ð",
-  eth: "ð",
-  Ntilde: "Ñ",
-  ntilde: "ñ",
-  Ograve: "Ò",
-  ograve: "ò",
-  Oacute: "Ó",
-  oacute: "ó",
-  Ocirc: "Ô",
-  ocirc: "ô",
-  Otilde: "Õ",
-  otilde: "õ",
-  Ouml: "Ö",
-  ouml: "ö",
-  Oslash: "Ø",
-  oslash: "ø",
-  Ugrave: "Ù",
-  ugrave: "ù",
-  Uacute: "Ú",
-  uacute: "ú",
-  Ucirc: "Û",
-  ucirc: "û",
-  Uuml: "Ü",
-  uuml: "ü",
-  Yacute: "Ý",
-  yacute: "ý",
-  THORN: "Þ",
-  thorn: "þ",
-  szlig: "ß",
-  yuml: "ÿ",
-  Yuml: "Ÿ"
-}
-
-/**
- * Latin Extended (Letters with diacritics)
- * @type {Record<string, string>}
- */
-const LATIN_EXTENDED = {
-  Amacr: "Ā",
-  amacr: "ā",
-  Abreve: "Ă",
-  abreve: "ă",
-  Aogon: "Ą",
-  aogon: "ą",
-  Cacute: "Ć",
-  cacute: "ć",
-  Ccirc: "Ĉ",
-  ccirc: "ĉ",
-  Cdot: "Ċ",
-  cdot: "ċ",
-  Ccaron: "Č",
-  ccaron: "č",
-  Dcaron: "Ď",
-  dcaron: "ď",
-  Dstrok: "Đ",
-  dstrok: "đ",
-  Emacr: "Ē",
-  emacr: "ē",
-  Ecaron: "Ě",
-  ecaron: "ě",
-  Edot: "Ė",
-  edot: "ė",
-  Eogon: "Ę",
-  eogon: "ę",
-  Gcirc: "Ĝ",
-  gcirc: "ĝ",
-  Gbreve: "Ğ",
-  gbreve: "ğ",
-  Gdot: "Ġ",
-  gdot: "ġ",
-  Gcedil: "Ģ",
-  Hcirc: "Ĥ",
-  hcirc: "ĥ",
-  Hstrok: "Ħ",
-  hstrok: "ħ",
-  Itilde: "Ĩ",
-  itilde: "ĩ",
-  Imacr: "Ī",
-  imacr: "ī",
-  Iogon: "Į",
-  iogon: "į",
-  Idot: "İ",
-  IJlig: "Ĳ",
-  ijlig: "ĳ",
-  Jcirc: "Ĵ",
-  jcirc: "ĵ",
-  Kcedil: "Ķ",
-  kcedil: "ķ",
-  kgreen: "ĸ",
-  Lacute: "Ĺ",
-  lacute: "ĺ",
-  Lcedil: "Ļ",
-  lcedil: "ļ",
-  Lcaron: "Ľ",
-  lcaron: "ľ",
-  Lmidot: "Ŀ",
-  lmidot: "ŀ",
-  Lstrok: "Ł",
-  lstrok: "ł",
-  Nacute: "Ń",
-  nacute: "ń",
-  Ncaron: "Ň",
-  ncaron: "ň",
-  Ncedil: "Ņ",
-  ncedil: "ņ",
-  ENG: "Ŋ",
-  eng: "ŋ",
-  Omacr: "Ō",
-  omacr: "ō",
-  Odblac: "Ő",
-  odblac: "ő",
-  OElig: "Œ",
-  oelig: "œ",
-  Racute: "Ŕ",
-  racute: "ŕ",
-  Rcaron: "Ř",
-  rcaron: "ř",
-  Rcedil: "Ŗ",
-  rcedil: "ŗ",
-  Sacute: "Ś",
-  sacute: "ś",
-  Scirc: "Ŝ",
-  scirc: "ŝ",
-  Scedil: "Ş",
-  scedil: "ş",
-  Scaron: "Š",
-  scaron: "š",
-  Tcedil: "Ţ",
-  tcedil: "ţ",
-  Tcaron: "Ť",
-  tcaron: "ť",
-  Tstrok: "Ŧ",
-  tstrok: "ŧ",
-  Utilde: "Ũ",
-  utilde: "ũ",
-  Umacr: "Ū",
-  umacr: "ū",
-  Ubreve: "Ŭ",
-  ubreve: "ŭ",
-  Uring: "Ů",
-  uring: "ů",
-  Udblac: "Ű",
-  udblac: "ű",
-  Uogon: "Ų",
-  uogon: "ų",
-  Wcirc: "Ŵ",
-  wcirc: "ŵ",
-  Ycirc: "Ŷ",
-  ycirc: "ŷ",
-  Zacute: "Ź",
-  zacute: "ź",
-  Zdot: "Ż",
-  zdot: "ż",
-  Zcaron: "Ž",
-  zcaron: "ž"
-}
-
-/**
- * Greek Letters
- * @type {Record<string, string>}
- */
-const GREEK = {
-  Alpha: "Α",
-  alpha: "α",
-  Beta: "Β",
-  beta: "β",
-  Gamma: "Γ",
-  gamma: "γ",
-  Delta: "Δ",
-  delta: "δ",
-  Epsilon: "Ε",
-  epsilon: "ε",
-  epsiv: "ϵ",
-  varepsilon: "ϵ",
-  Zeta: "Ζ",
-  zeta: "ζ",
-  Eta: "Η",
-  eta: "η",
-  Theta: "Θ",
-  theta: "θ",
-  thetasym: "ϑ",
-  vartheta: "ϑ",
-  Iota: "Ι",
-  iota: "ι",
-  Kappa: "Κ",
-  kappa: "κ",
-  kappav: "ϰ",
-  varkappa: "ϰ",
-  Lambda: "Λ",
-  lambda: "λ",
-  Mu: "Μ",
-  mu: "μ",
-  Nu: "Ν",
-  nu: "ν",
-  Xi: "Ξ",
-  xi: "ξ",
-  Omicron: "Ο",
-  omicron: "ο",
-  Pi: "Π",
-  pi: "π",
-  piv: "ϖ",
-  varpi: "ϖ",
-  Rho: "Ρ",
-  rho: "ρ",
-  rhov: "ϱ",
-  varrho: "ϱ",
-  Sigma: "Σ",
-  sigma: "σ",
-  sigmaf: "ς",
-  sigmav: "ς",
-  varsigma: "ς",
-  Tau: "Τ",
-  tau: "τ",
-  Upsilon: "Υ",
-  upsilon: "υ",
-  upsi: "υ",
-  Upsi: "ϒ",
-  upsih: "ϒ",
-  Phi: "Φ",
-  phi: "φ",
-  phiv: "ϕ",
-  varphi: "ϕ",
-  Chi: "Χ",
-  chi: "χ",
-  Psi: "Ψ",
-  psi: "ψ",
-  Omega: "Ω",
-  omega: "ω",
-  ohm: "Ω",
-  Gammad: "Ϝ",
-  gammad: "ϝ",
-  digamma: "ϝ"
-}
-
-/**
- * Cyrillic Letters
- * @type {Record<string, string>}
- */
-const CYRILLIC = {
-  Afr: "𝔄",
-  afr: "𝔞",
-  Acy: "А",
-  acy: "а",
-  Bcy: "Б",
-  bcy: "б",
-  Vcy: "В",
-  vcy: "в",
-  Gcy: "Г",
-  gcy: "г",
-  Dcy: "Д",
-  dcy: "д",
-  IEcy: "Е",
-  iecy: "е",
-  IOcy: "Ё",
-  iocy: "ё",
-  ZHcy: "Ж",
-  zhcy: "ж",
-  Zcy: "З",
-  zcy: "з",
-  Icy: "И",
-  icy: "и",
-  Jcy: "Й",
-  jcy: "й",
-  Kcy: "К",
-  kcy: "к",
-  Lcy: "Л",
-  lcy: "л",
-  Mcy: "М",
-  mcy: "м",
-  Ncy: "Н",
-  ncy: "н",
-  Ocy: "О",
-  ocy: "о",
-  Pcy: "П",
-  pcy: "п",
-  Rcy: "Р",
-  rcy: "р",
-  Scy: "С",
-  scy: "с",
-  Tcy: "Т",
-  tcy: "т",
-  Ucy: "У",
-  ucy: "у",
-  Fcy: "Ф",
-  fcy: "ф",
-  KHcy: "Х",
-  khcy: "х",
-  TScy: "Ц",
-  tscy: "ц",
-  CHcy: "Ч",
-  chcy: "ч",
-  SHcy: "Ш",
-  shcy: "ш",
-  SHCHcy: "Щ",
-  shchcy: "щ",
-  HARDcy: "Ъ",
-  hardcy: "ъ",
-  Ycy: "Ы",
-  ycy: "ы",
-  SOFTcy: "Ь",
-  softcy: "ь",
-  Ecy: "Э",
-  ecy: "э",
-  YUcy: "Ю",
-  yucy: "ю",
-  YAcy: "Я",
-  yacy: "я",
-  DJcy: "Ђ",
-  djcy: "ђ",
-  GJcy: "Ѓ",
-  gjcy: "ѓ",
-  Jukcy: "Є",
-  jukcy: "є",
-  DScy: "Ѕ",
-  dscy: "ѕ",
-  Iukcy: "І",
-  iukcy: "і",
-  YIcy: "Ї",
-  yicy: "ї",
-  Jsercy: "Ј",
-  jsercy: "ј",
-  LJcy: "Љ",
-  ljcy: "љ",
-  NJcy: "Њ",
-  njcy: "њ",
-  TSHcy: "Ћ",
-  tshcy: "ћ",
-  KJcy: "Ќ",
-  kjcy: "ќ",
-  Ubrcy: "Ў",
-  ubrcy: "ў",
-  DZcy: "Џ",
-  dzcy: "џ"
-}
-
-/**
- * Mathematical Operators & Relations
- * @type {Record<string, string>}
- */
-const MATH = {
-  plus: "+",
-  minus: "−",
-  mnplus: "∓",
-  mp: "∓",
-  pm: "±",
-  times: "×",
-  div: "÷",
-  divide: "÷",
-  sdot: "⋅",
-  star: "☆",
-  starf: "★",
-  bigstar: "★",
-  lowast: "∗",
-  ast: "*",
-  midast: "*",
-  compfn: "∘",
-  smallcircle: "∘",
-  bullet: "•",
-  bull: "•",
-  nbsp: "\u00a0",
-  hellip: "…",
-  mldr: "…",
-  prime: "′",
-  Prime: "″",
-  tprime: "‴",
-  bprime: "‵",
-  backprime: "‵",
-  minus: "−",
-  minusd: "∸",
-  dotminus: "∸",
-  plusdo: "∔",
-  dotplus: "∔",
-  plusmn: "±",
-  minusplus: "∓",
-  mnplus: "∓",
-  mp: "∓",
-  setminus: "∖",
-  smallsetminus: "∖",
-  Backslash: "∖",
-  setmn: "∖",
-  ssetmn: "∖",
-  lowbar: "_",
-  verbar: "|",
-  vert: "|",
-  VerticalLine: "|",
-  colon: ":",
-  Colon: "∷",
-  Proportion: "∷",
-  ratio: "∶",
-  equals: "=",
-  ne: "≠",
-  nequiv: "≢",
-  equiv: "≡",
-  Congruent: "≡",
-  sim: "∼",
-  thicksim: "∼",
-  thksim: "∼",
-  sime: "≃",
-  simeq: "≃",
-  TildeEqual: "≃",
-  asymp: "≈",
-  approx: "≈",
-  thickapprox: "≈",
-  thkap: "≈",
-  TildeTilde: "≈",
-  ncong: "≇",
-  cong: "≅",
-  TildeFullEqual: "≅",
-  asympeq: "≍",
-  CupCap: "≍",
-  bump: "≎",
-  Bumpeq: "≎",
-  HumpDownHump: "≎",
-  bumpe: "≏",
-  bumpeq: "≏",
-  HumpEqual: "≏",
-  dotminus: "∸",
-  minusd: "∸",
-  plusdo: "∔",
-  dotplus: "∔",
-  le: "≤",
-  LessEqual: "≤",
-  ge: "≥",
-  GreaterEqual: "≥",
-  lesseqgtr: "⋚",
-  lesseqqgtr: "⪋",
-  greater: ">",
-  less: "<"
-}
-
-/**
- * Mathematical Operators (Advanced)
- * @type {Record<string, string>}
- */
-const MATH_ADVANCED = {
-  alefsym: "ℵ",
-  aleph: "ℵ",
-  beth: "ℶ",
-  gimel: "ℷ",
-  daleth: "ℸ",
-  forall: "∀",
-  ForAll: "∀",
-  part: "∂",
-  PartialD: "∂",
-  exist: "∃",
-  Exists: "∃",
-  nexist: "∄",
-  nexists: "∄",
-  empty: "∅",
-  emptyset: "∅",
-  emptyv: "∅",
-  varnothing: "∅",
-  nabla: "∇",
-  Del: "∇",
-  isin: "∈",
-  isinv: "∈",
-  in: "∈",
-  Element: "∈",
-  notin: "∉",
-  notinva: "∉",
-  ni: "∋",
-  niv: "∋",
-  SuchThat: "∋",
-  ReverseElement: "∋",
-  notni: "∌",
-  notniva: "∌",
-  prod: "∏",
-  Product: "∏",
-  coprod: "∐",
-  Coproduct: "∐",
-  sum: "∑",
-  Sum: "∑",
-  minus: "−",
-  mp: "∓",
-  plusdo: "∔",
-  dotplus: "∔",
-  setminus: "∖",
-  lowast: "∗",
-  radic: "√",
-  Sqrt: "√",
-  prop: "∝",
-  propto: "∝",
-  Proportional: "∝",
-  varpropto: "∝",
-  infin: "∞",
-  infintie: "⧝",
-  ang: "∠",
-  angle: "∠",
-  angmsd: "∡",
-  measuredangle: "∡",
-  angsph: "∢",
-  mid: "∣",
-  VerticalBar: "∣",
-  nmid: "∤",
-  nsmid: "∤",
-  npar: "∦",
-  parallel: "∥",
-  spar: "∥",
-  nparallel: "∦",
-  nspar: "∦",
-  and: "∧",
-  wedge: "∧",
-  or: "∨",
-  vee: "∨",
-  cap: "∩",
-  cup: "∪",
-  int: "∫",
-  Integral: "∫",
-  conint: "∮",
-  ContourIntegral: "∮",
-  Conint: "∯",
-  DoubleContourIntegral: "∯",
-  Cconint: "∰",
-  there4: "∴",
-  therefore: "∴",
-  Therefore: "∴",
-  becaus: "∵",
-  because: "∵",
-  Because: "∵",
-  ratio: "∶",
-  Proportion: "∷",
-  minusd: "∸",
-  dotminus: "∸",
-  mDDot: "∺",
-  homtht: "∻",
-  sim: "∼",
-  bsimg: "∽",
-  backsim: "∽",
-  ac: "∾",
-  mstpos: "∾",
-  acd: "∿",
-  VerticalTilde: "≀",
-  wr: "≀",
-  wreath: "≀",
-  nsime: "≄",
-  nsimeq: "≄",
-  nsimeq: "≄",
-  ncong: "≇",
-  simne: "≆",
-  ncongdot: "⩭̸",
-  ngsim: "≵",
-  nsim: "≁",
-  napprox: "≉",
-  nap: "≉",
-  ngeq: "≱",
-  nge: "≱",
-  nleq: "≰",
-  nle: "≰",
-  ngtr: "≯",
-  ngt: "≯",
-  nless: "≮",
-  nlt: "≮",
-  nprec: "⊀",
-  npr: "⊀",
-  nsucc: "⊁",
-  nsc: "⊁"
-}
-
-/**
- * Arrows
- * @type {Record<string, string>}
- */
-const ARROWS = {
-  larr: "←",
-  leftarrow: "←",
-  LeftArrow: "←",
-  uarr: "↑",
-  uparrow: "↑",
-  UpArrow: "↑",
-  rarr: "→",
-  rightarrow: "→",
-  RightArrow: "→",
-  darr: "↓",
-  downarrow: "↓",
-  DownArrow: "↓",
-  harr: "↔",
-  leftrightarrow: "↔",
-  LeftRightArrow: "↔",
-  varr: "↕",
-  updownarrow: "↕",
-  UpDownArrow: "↕",
-  nwarr: "↖",
-  nwarrow: "↖",
-  UpperLeftArrow: "↖",
-  nearr: "↗",
-  nearrow: "↗",
-  UpperRightArrow: "↗",
-  searr: "↘",
-  searrow: "↘",
-  LowerRightArrow: "↘",
-  swarr: "↙",
-  swarrow: "↙",
-  LowerLeftArrow: "↙",
-  lArr: "⇐",
-  Leftarrow: "⇐",
-  uArr: "⇑",
-  Uparrow: "⇑",
-  rArr: "⇒",
-  Rightarrow: "⇒",
-  dArr: "⇓",
-  Downarrow: "⇓",
-  hArr: "⇔",
-  Leftrightarrow: "⇔",
-  iff: "⇔",
-  vArr: "⇕",
-  Updownarrow: "⇕",
-  lAarr: "⇚",
-  Lleftarrow: "⇚",
-  rAarr: "⇛",
-  Rrightarrow: "⇛",
-  lrarr: "⇆",
-  leftrightarrows: "⇆",
-  rlarr: "⇄",
-  rightleftarrows: "⇄",
-  lrhar: "⇋",
-  leftrightharpoons: "⇋",
-  ReverseEquilibrium: "⇋",
-  rlhar: "⇌",
-  rightleftharpoons: "⇌",
-  Equilibrium: "⇌",
-  udarr: "⇅",
-  UpArrowDownArrow: "⇅",
-  duarr: "⇵",
-  DownArrowUpArrow: "⇵",
-  llarr: "⇇",
-  leftleftarrows: "⇇",
-  rrarr: "⇉",
-  rightrightarrows: "⇉",
-  ddarr: "⇊",
-  downdownarrows: "⇊",
-  har: "↽",
-  lhard: "↽",
-  leftharpoondown: "↽",
-  lharu: "↼",
-  leftharpoonup: "↼",
-  rhard: "⇁",
-  rightharpoondown: "⇁",
-  rharu: "⇀",
-  rightharpoonup: "⇀",
-  lsh: "↰",
-  Lsh: "↰",
-  rsh: "↱",
-  Rsh: "↱",
-  ldsh: "↲",
-  rdsh: "↳",
-  hookleftarrow: "↩",
-  hookrightarrow: "↪",
-  mapstoleft: "↤",
-  mapstoup: "↥",
-  map: "↦",
-  mapsto: "↦",
-  mapstodown: "↧",
-  crarr: "↵",
-  nwarrow: "↖",
-  nearrow: "↗",
-  searrow: "↘",
-  swarrow: "↙",
-  nleftarrow: "↚",
-  nleftrightarrow: "↮",
-  nrightarrow: "↛",
-  nrarr: "↛",
-  larrtl: "↢",
-  rarrtl: "↣",
-  leftarrowtail: "↢",
-  rightarrowtail: "↣",
-  twoheadleftarrow: "↞",
-  twoheadrightarrow: "↠",
-  Larr: "↞",
-  Rarr: "↠",
-  larrhk: "↩",
-  rarrhk: "↪",
-  larrlp: "↫",
-  looparrowleft: "↫",
-  rarrlp: "↬",
-  looparrowright: "↬",
-  harrw: "↭",
-  leftrightsquigarrow: "↭",
-  nrarrw: "↝̸",
-  rarrw: "↝",
-  rightsquigarrow: "↝",
-  larrbfs: "⤟",
-  rarrbfs: "⤠",
-  nvHarr: "⤄",
-  nvlArr: "⤂",
-  nvrArr: "⤃",
-  larrfs: "⤝",
-  rarrfs: "⤞",
-  Map: "⤅",
-  larrsim: "⥳",
-  rarrsim: "⥴",
-  harrcir: "⥈",
-  Uarrocir: "⥉",
-  lurdshar: "⥊",
-  ldrdhar: "⥧",
-  ldrushar: "⥋",
-  rdldhar: "⥩",
-  lrhard: "⥭",
-  rlhar: "⇌",
-  uharr: "↾",
-  uharl: "↿",
-  dharr: "⇂",
-  dharl: "⇃",
-  Uarr: "↟",
-  Darr: "↡",
-  zigrarr: "⇝",
-  nwArr: "⇖",
-  neArr: "⇗",
-  seArr: "⇘",
-  swArr: "⇙",
-  nharr: "↮",
-  nhArr: "⇎",
-  nlarr: "↚",
-  nlArr: "⇍",
-  nrarr: "↛",
-  nrArr: "⇏",
-  larrb: "⇤",
-  LeftArrowBar: "⇤",
-  rarrb: "⇥",
-  RightArrowBar: "⇥"
-}
-
-/**
- * Geometric Shapes
- * @type {Record<string, string>}
- */
-const SHAPES = {
-  square: "□",
-  Square: "□",
-  squ: "□",
-  squf: "▪",
-  squarf: "▪",
-  blacksquar: "▪",
-  blacksquare: "▪",
-  FilledVerySmallSquare: "▪",
-  blk34: "▓",
-  blk12: "▒",
-  blk14: "░",
-  block: "█",
-  srect: "▭",
-  rect: "▭",
-  sdot: "⋅",
-  sdotb: "⊡",
-  dotsquare: "⊡",
-  triangle: "▵",
-  tri: "▵",
-  trine: "▵",
-  utri: "▵",
-  triangledown: "▿",
-  dtri: "▿",
-  tridown: "▿",
-  triangleleft: "◃",
-  ltri: "◃",
-  triangleright: "▹",
-  rtri: "▹",
-  blacktriangle: "▴",
-  utrif: "▴",
-  blacktriangledown: "▾",
-  dtrif: "▾",
-  blacktriangleleft: "◂",
-  ltrif: "◂",
-  blacktriangleright: "▸",
-  rtrif: "▸",
-  loz: "◊",
-  lozenge: "◊",
-  blacklozenge: "⧫",
-  lozf: "⧫",
-  bigcirc: "◯",
-  xcirc: "◯",
-  circ: "ˆ",
-  Circle: "○",
-  cir: "○",
-  o: "○",
-  bullet: "•",
-  bull: "•",
-  hellip: "…",
-  mldr: "…",
-  nldr: "‥",
-  boxh: "─",
-  HorizontalLine: "─",
-  boxv: "│",
-  boxdr: "┌",
-  boxdl: "┐",
-  boxur: "└",
-  boxul: "┘",
-  boxvr: "├",
-  boxvl: "┤",
-  boxhd: "┬",
-  boxhu: "┴",
-  boxvh: "┼",
-  boxH: "═",
-  boxV: "║",
-  boxdR: "╒",
-  boxDr: "╓",
-  boxDR: "╔",
-  boxDl: "╕",
-  boxdL: "╖",
-  boxDL: "╗",
-  boxuR: "╘",
-  boxUr: "╙",
-  boxUR: "╚",
-  boxUl: "╜",
-  boxuL: "╛",
-  boxUL: "╝",
-  boxvR: "╞",
-  boxVr: "╟",
-  boxVR: "╠",
-  boxVl: "╢",
-  boxvL: "╡",
-  boxVL: "╣",
-  boxHd: "╤",
-  boxhD: "╥",
-  boxHD: "╦",
-  boxHu: "╧",
-  boxhU: "╨",
-  boxHU: "╩",
-  boxvH: "╪",
-  boxVh: "╫",
-  boxVH: "╬"
-}
-
-/**
- * Punctuation & Diacritics
- * @type {Record<string, string>}
- */
-const PUNCTUATION = {
-  excl: "!",
-  iexcl: "¡",
-  brvbar: "¦",
-  sect: "§",
-  uml: "¨",
-  copy: "©",
-  ordf: "ª",
-  laquo: "«",
-  not: "¬",
-  shy: "\u00ad",
-  reg: "®",
-  macr: "¯",
-  deg: "°",
-  plusmn: "±",
-  sup2: "²",
-  sup3: "³",
-  acute: "´",
-  micro: "µ",
-  para: "¶",
-  middot: "·",
-  cedil: "¸",
-  sup1: "¹",
-  ordm: "º",
-  raquo: "»",
-  frac14: "¼",
-  frac12: "½",
-  frac34: "¾",
-  iquest: "¿",
-  nbsp: "\u00a0",
-  comma: ",",
-  period: ".",
-  colon: ":",
-  semi: ";",
-  vert: "|",
-  Verbar: "‖",
-  verbar: "|",
-  dblac: "˝",
-  circ: "ˆ",
-  caron: "ˇ",
-  breve: "˘",
-  dot: "˙",
-  ring: "˚",
-  ogon: "˛",
-  tilde: "˜",
-  DiacriticalGrave: "`",
-  DiacriticalAcute: "´",
-  DiacriticalTilde: "˜",
-  DiacriticalDot: "˙",
-  DiacriticalDoubleAcute: "˝",
-  grave: "`",
-  acute: "´"
-}
-
-/**
- * Currency Symbols
- * @type {Record<string, string>}
- */
-const CURRENCY = {
-  cent: "¢",
-  pound: "£",
-  curren: "¤",
-  yen: "¥",
-  euro: "€",
-  dollar: "$",
-  euro: "€",
-  fnof: "ƒ",
-  inr: "₹",
-  af: "؋",
-  birr: "ብር",
-  peso: "₱",
-  rub: "₽",
-  won: "₩",
-  yuan: "¥",
-  cedil: "¸"
-}
-
-/**
- * Fractions
- * @type {Record<string, string>}
- */
-const FRACTIONS = {
-  frac12: "½",
-  half: "½",
-  frac13: "⅓",
-  frac14: "¼",
-  frac15: "⅕",
-  frac16: "⅙",
-  frac18: "⅛",
-  frac23: "⅔",
-  frac25: "⅖",
-  frac34: "¾",
-  frac35: "⅗",
-  frac38: "⅜",
-  frac45: "⅘",
-  frac56: "⅚",
-  frac58: "⅝",
-  frac78: "⅞",
-  frasl: "⁄"
-}
-
-/**
- * Miscellaneous Symbols
- * @type {Record<string, string>}
- */
-const MISC_SYMBOLS = {
-  trade: "™",
-  TRADE: "™",
-  telrec: "⌕",
-  target: "⌖",
-  ulcorn: "⌜",
-  ulcorner: "⌜",
-  urcorn: "⌝",
-  urcorner: "⌝",
-  dlcorn: "⌞",
-  llcorner: "⌞",
-  drcorn: "⌟",
-  lrcorner: "⌟",
-  intercal: "⊺",
-  intcal: "⊺",
-  oplus: "⊕",
-  CirclePlus: "⊕",
-  ominus: "⊖",
-  CircleMinus: "⊖",
-  otimes: "⊗",
-  CircleTimes: "⊗",
-  osol: "⊘",
-  odot: "⊙",
-  CircleDot: "⊙",
-  oast: "⊛",
-  circledast: "⊛",
-  odash: "⊝",
-  circleddash: "⊝",
-  ocirc: "⊚",
-  circledcirc: "⊚",
-  boxplus: "⊞",
-  plusb: "⊞",
-  boxminus: "⊟",
-  minusb: "⊟",
-  boxtimes: "⊠",
-  timesb: "⊠",
-  boxdot: "⊡",
-  sdotb: "⊡",
-  veebar: "⊻",
-  vee: "∨",
-  barvee: "⊽",
-  and: "∧",
-  wedge: "∧",
-  Cap: "⋒",
-  Cup: "⋓",
-  Fork: "⋔",
-  pitchfork: "⋔",
-  epar: "⋕",
-  ltlarr: "⥶",
-  nvap: "≍⃒",
-  nvsim: "∼⃒",
-  nvge: "≥⃒",
-  nvle: "≤⃒",
-  nvlt: "<⃒",
-  nvgt: ">⃒",
-  nvltrie: "⊴⃒",
-  nvrtrie: "⊵⃒",
-  Vdash: "⊩",
-  dashv: "⊣",
-  vDash: "⊨",
-  Vdash: "⊩",
-  Vvdash: "⊪",
-  nvdash: "⊬",
-  nvDash: "⊭",
-  nVdash: "⊮",
-  nVDash: "⊯"
-}
-
-/**
- * All entities combined (if you need everything)
- * @type {Record<string, string>}
- */
-const ALL_ENTITIES = {
-  ...BASIC_LATIN,
-  ...LATIN_ACCENTS,
-  ...LATIN_EXTENDED,
-  ...GREEK,
-  ...CYRILLIC,
-  ...MATH,
-  ...MATH_ADVANCED,
-  ...ARROWS,
-  ...SHAPES,
-  ...PUNCTUATION,
-  ...CURRENCY,
-  ...FRACTIONS,
-  ...MISC_SYMBOLS
-}
-
-const XML = {
-  amp: "&",
-  apos: "'",
-  gt: ">",
-  lt: "<",
-  quot: '"'
-}
-const COMMON_HTML = {
-  nbsp: "\u00a0",
-  copy: "\u00a9",
-  reg: "\u00ae",
-  trade: "\u2122",
-  mdash: "\u2014",
-  ndash: "\u2013",
-  hellip: "\u2026",
-  laquo: "\u00ab",
-  raquo: "\u00bb",
-  lsquo: "\u2018",
-  rsquo: "\u2019",
-  ldquo: "\u201c",
-  rdquo: "\u201d",
-  bull: "\u2022",
-  para: "\u00b6",
-  sect: "\u00a7",
-  deg: "\u00b0",
-  frac12: "\u00bd",
-  frac14: "\u00bc",
-  frac34: "\u00be"
-} // CONCATENATED MODULE: ./node_modules/@nodable/entities/src/EntityDecoder.js
-// ---------------------------------------------------------------------------
-// Note: NUMERIC_ENTITIES (&#NNN; / &#xHH;) are handled by the scanner directly
-// via String.fromCodePoint() without any map lookup.
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// Built-in named entity map  (name → replacement string)
-// No regex, no {regex,val} objects — just flat key/value pairs.
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-const SPECIAL_CHARS = new Set("!?\\\\/[]$%{}^&*()<>|+")
-
-/**
- * Validate that an entity name contains no dangerous characters.
- * @param {string} name
- * @returns {string} the name, unchanged
- * @throws {Error} on invalid characters
- */
-function EntityDecoder_validateEntityName(name) {
-  if (name[0] === "#") {
-    throw new Error(
-      `[EntityReplacer] Invalid character '#' in entity name: "${name}"`
-    )
-  }
-  for (const ch of name) {
-    if (SPECIAL_CHARS.has(ch)) {
-      throw new Error(
-        `[EntityReplacer] Invalid character '${ch}' in entity name: "${name}"`
-      )
-    }
-  }
-  return name
-}
-
-/**
- * Merge one or more entity maps into a flat name→string map.
- * Accepts either:
- *   - plain string values:             { amp: '&' }
- *   - legacy {regex,val} / {regx,val}: { lt: { regex: /.../, val: '<' } }
- *
- * Values containing '&' are skipped (recursive expansion risk).
- *
- * @param {...object} maps
- * @returns {Record<string, string>}
- */
-function mergeEntityMaps(...maps) {
-  const out = Object.create(null)
-  for (const map of maps) {
-    if (!map) continue
-    for (const key of Object.keys(map)) {
-      const raw = map[key]
-      if (typeof raw === "string") {
-        out[key] = raw
-      } else if (raw && typeof raw === "object" && raw.val !== undefined) {
-        // Legacy {regex,val} or {regx,val} — extract the string val only
-        const val = raw.val
-        if (typeof val === "string") {
-          out[key] = val
-        }
-        // function vals are not supported in the scanner — skip
-      }
-    }
-  }
-  return out
-}
-
-// ---------------------------------------------------------------------------
-// applyLimitsTo helpers
-// ---------------------------------------------------------------------------
-
-const LIMIT_TIER_EXTERNAL = "external" // input/runtime + persistent external maps
-const LIMIT_TIER_BASE = "base" // DEFAULT_XML_ENTITIES + namedEntities (system) maps
-const LIMIT_TIER_ALL = "all" // every entity regardless of tier
-
-/**
- * Resolve `applyLimitsTo` option into a normalised Set of tier strings.
- * Accepted values: 'external' | 'base' | 'all' | string[]
- * Default: 'external' (only untrusted injected entities are counted).
- * @param {string|string[]|undefined} raw
- * @returns {Set<string>}
- */
-function parseLimitTiers(raw) {
-  if (!raw || raw === LIMIT_TIER_EXTERNAL) return new Set([LIMIT_TIER_EXTERNAL])
-  if (raw === LIMIT_TIER_ALL) return new Set([LIMIT_TIER_ALL])
-  if (raw === LIMIT_TIER_BASE) return new Set([LIMIT_TIER_BASE])
-  if (Array.isArray(raw)) return new Set(raw)
-  return new Set([LIMIT_TIER_EXTERNAL]) // safe default for unrecognised values
-}
-
-// ---------------------------------------------------------------------------
-// NCR (Numeric Character Reference) classification
-// ---------------------------------------------------------------------------
-
-// Severity order — higher number = stricter action.
-// Used to enforce minimum action levels for specific codepoint ranges.
-const NCR_LEVEL = Object.freeze({ allow: 0, leave: 1, remove: 2, throw: 3 })
-
-// XML 1.0 §2.2: allowed chars are #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
-// Restricted C0: U+0001–U+001F excluding U+0009, U+000A, U+000D
-const XML10_ALLOWED_C0 = new Set([0x09, 0x0a, 0x0d])
-
-/**
- * Parse the `ncr` constructor option into flat, hot-path-friendly fields.
- * @param {object|undefined} ncr
- * @returns {{ xmlVersion: number, onLevel: number, nullLevel: number }}
- */
-function parseNCRConfig(ncr) {
-  if (!ncr) {
-    return {
-      xmlVersion: 1.0,
-      onLevel: NCR_LEVEL.allow,
-      nullLevel: NCR_LEVEL.remove
-    }
-  }
-  const xmlVersion = ncr.xmlVersion === 1.1 ? 1.1 : 1.0
-  const onLevel = NCR_LEVEL[ncr.onNCR] ?? NCR_LEVEL.allow
-  const nullLevel = NCR_LEVEL[ncr.nullNCR] ?? NCR_LEVEL.remove
-  // 'allow' is not meaningful for null — clamp to at least 'remove'
-  const clampedNull = Math.max(nullLevel, NCR_LEVEL.remove)
-  return { xmlVersion, onLevel, nullLevel: clampedNull }
-}
-
-// ---------------------------------------------------------------------------
-// EntityReplacer
-// ---------------------------------------------------------------------------
-
-/**
- * Single-pass, zero-regex entity replacer for XML/HTML content.
- *
- * Algorithm: scan the string once for '&', read to ';', resolve via map
- * or direct codepoint conversion, build output chunks, join once at the end.
- *
- * Entity lookup priority (highest → lowest):
- *   1. input / runtime  (DOCTYPE entities for current document)
- *   2. persistent external (survive across documents)
- *   3. base named map   (DEFAULT_XML_ENTITIES + user-supplied namedEntities)
- *
- * Both input and external resolve as the 'external' tier for limit purposes.
- * Base map entities resolve as the 'base' tier.
- *
- * Numeric / hex references (&#NNN; / &#xHH;) are resolved directly via
- * String.fromCodePoint() — no map needed. They count as 'base' tier.
- *
- * @example
- * const replacer = new EntityReplacer({ namedEntities: COMMON_HTML });
- * replacer.setExternalEntities({ brand: 'Acme' });
- *
- * const instance = replacer.reset();
- * instance.addInputEntities({ version: '1.0' });
- * instance.encode('&brand; v&version; &lt;'); // 'Acme v1.0 <'
- */
-class EntityDecoder {
-  /**
-   * @param {object} [options]
-   * @param {object|null}  [options.namedEntities]        — extra named entities merged into base map
-   * @param {object}  [options.limit]                 — security limits
-   * @param {number}       [options.limit.maxTotalExpansions=0]  — 0 = unlimited
-   * @param {number}       [options.limit.maxExpandedLength=0]   — 0 = unlimited
-   * @param {'external'|'base'|'all'|string[]} [options.limit.applyLimitsTo='external']
-   *   Which entity tiers count against the security limits:
-   *   - 'external' (default) — only input/runtime + persistent external entities
-   *   - 'base'               — only DEFAULT_XML_ENTITIES + namedEntities
-   *   - 'all'                — every entity regardless of tier
-   *   - string[]             — explicit combination, e.g. ['external', 'base']
-   * @param {((resolved: string, original: string) => string)|null} [options.postCheck=null]
-   * @param {string[]} [options.remove=[]] — entity names (e.g. ['nbsp', '#13']) to delete (replace with empty string)
-   * @param {string[]} [options.leave=[]]  — entity names to keep as literal (unchanged in output)
-   * @param {object}   [options.ncr]       — Numeric Character Reference controls
-   * @param {1.0|1.1}  [options.ncr.xmlVersion=1.0]
-   *   XML version governing which codepoint ranges are restricted:
-   *   - 1.0 — C0 controls U+0001–U+001F (except U+0009/000A/000D) are prohibited
-   *   - 1.1 — C0 controls are allowed when written as NCRs; C1 (U+007F–U+009F) decoded as-is
-   * @param {'allow'|'leave'|'remove'|'throw'} [options.ncr.onNCR='allow']
-   *   Base action for numeric references. Severity order: allow < leave < remove < throw.
-   *   For codepoint ranges that carry a minimum level (surrogates → remove, XML 1.0 C0 → remove),
-   *   the effective action is max(onNCR, rangeMinimum).
-   * @param {'remove'|'throw'} [options.ncr.nullNCR='remove']
-   *   Action for U+0000 (null). 'allow' and 'leave' are clamped to 'remove' since null is never safe.
-   */
-  constructor(options = {}) {
-    this._limit = options.limit || {}
-    this._maxTotalExpansions = this._limit.maxTotalExpansions || 0
-    this._maxExpandedLength = this._limit.maxExpandedLength || 0
-    this._postCheck =
-      typeof options.postCheck === "function" ? options.postCheck : r => r
-    this._limitTiers = parseLimitTiers(
-      this._limit.applyLimitsTo ?? LIMIT_TIER_EXTERNAL
-    )
-    this._numericAllowed = options.numericAllowed ?? true
-    // Base map: DEFAULT_XML_ENTITIES + user-supplied extras. Immutable after construction.
-    this._baseMap = mergeEntityMaps(XML, options.namedEntities || null)
-
-    // Persistent external entities — survive across documents.
-    // Stored as a separate map so reset() never touches them.
-    /** @type {Record<string, string>} */
-    this._externalMap = Object.create(null)
-
-    // Input / runtime entities — current document only, wiped on reset().
-    /** @type {Record<string, string>} */
-    this._inputMap = Object.create(null)
-
-    // Per-document counters
-    this._totalExpansions = 0
-    this._expandedLength = 0
-
-    // --- New: remove / leave sets ---
-    /** @type {Set<string>} */
-    this._removeSet = new Set(
-      options.remove && Array.isArray(options.remove) ? options.remove : []
-    )
-    /** @type {Set<string>} */
-    this._leaveSet = new Set(
-      options.leave && Array.isArray(options.leave) ? options.leave : []
-    )
-
-    // --- NCR config (parsed into flat fields for hot-path speed) ---
-    const ncrCfg = parseNCRConfig(options.ncr)
-    this._ncrXmlVersion = ncrCfg.xmlVersion
-    this._ncrOnLevel = ncrCfg.onLevel
-    this._ncrNullLevel = ncrCfg.nullLevel
-  }
-
-  // -------------------------------------------------------------------------
-  // Persistent external entity registration
-  // -------------------------------------------------------------------------
-
-  /**
-   * Replace the full set of persistent external entities.
-   * All keys are validated — throws on invalid characters.
-   * @param {Record<string, string | { regex?: RegExp, val: string }>} map
-   */
-  setExternalEntities(map) {
-    if (map) {
-      for (const key of Object.keys(map)) {
-        EntityDecoder_validateEntityName(key)
-      }
-    }
-    this._externalMap = mergeEntityMaps(map)
-  }
-
-  /**
-   * Add a single persistent external entity.
-   * @param {string} key
-   * @param {string} value
-   */
-  addExternalEntity(key, value) {
-    EntityDecoder_validateEntityName(key)
-    if (typeof value === "string" && value.indexOf("&") === -1) {
-      this._externalMap[key] = value
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // Input / runtime entity registration (per document)
-  // -------------------------------------------------------------------------
-
-  /**
-   * Inject DOCTYPE entities for the current document.
-   * Also resets per-document expansion counters.
-   * @param {Record<string, string | { regx?: RegExp, regex?: RegExp, val: string }>} map
-   */
-  addInputEntities(map) {
-    this._totalExpansions = 0
-    this._expandedLength = 0
-    this._inputMap = mergeEntityMaps(map)
-  }
-
-  // -------------------------------------------------------------------------
-  // Per-document reset
-  // -------------------------------------------------------------------------
-
-  /**
-   * Wipe input/runtime entities and reset counters.
-   * Call this before processing each new document.
-   * @returns {this}
-   */
-  reset() {
-    this._inputMap = Object.create(null)
-    this._totalExpansions = 0
-    this._expandedLength = 0
-    return this
-  }
-
-  // -------------------------------------------------------------------------
-  // XML version (can be set after construction, e.g. once parser reads <?xml?>)
-  // -------------------------------------------------------------------------
-
-  /**
-   * Update the XML version used for NCR classification.
-   * Call this as soon as the document's `<?xml version="...">` declaration is parsed.
-   * @param {1.0|1.1|number} version
-   */
-  setXmlVersion(version) {
-    this._ncrXmlVersion = version === 1.1 ? 1.1 : 1.0
-  }
-
-  // -------------------------------------------------------------------------
-  // Primary API
-  // -------------------------------------------------------------------------
-
-  /**
-   * Replace all entity references in `str` in a single pass.
-   *
-   * @param {string} str
-   * @returns {string}
-   */
-  decode(str) {
-    if (typeof str !== "string" || str.length === 0) return str
-    //TODO: check if needed
-    //if (str.indexOf('&') === -1) return str; // fast path — no entities at all
-
-    const original = str
-    const chunks = []
-    const len = str.length
-    let last = 0 // start of next unprocessed literal chunk
-    let i = 0
-
-    const limitExpansions = this._maxTotalExpansions > 0
-    const limitLength = this._maxExpandedLength > 0
-    const checkLimits = limitExpansions || limitLength
-
-    while (i < len) {
-      // Scan forward to next '&'
-      if (str.charCodeAt(i) !== 38 /* '&' */) {
-        i++
-        continue
-      }
-
-      // --- Found '&' at position i ---
-
-      // Scan forward to ';'
-      let j = i + 1
-      while (j < len && str.charCodeAt(j) !== 59 /* ';' */ && j - i <= 32) j++
-
-      if (j >= len || str.charCodeAt(j) !== 59) {
-        // No closing ';' within window — treat '&' as literal
-        i++
-        continue
-      }
-
-      // Raw token between '&' and ';' (exclusive)
-      const token = str.slice(i + 1, j)
-      if (token.length === 0) {
-        i++
-        continue
-      }
-
-      let replacement
-      let tier // which limit tier this entity belongs to
-
-      if (this._removeSet.has(token)) {
-        // Remove entity: replace with empty string
-        replacement = ""
-        // If entity was unknown (replacement undefined), we still need a tier for limits.
-        // Treat as external tier because it's user-directed removal of an unknown reference.
-        if (tier === undefined) {
-          tier = LIMIT_TIER_EXTERNAL
-        }
-      } else if (this._leaveSet.has(token)) {
-        // Do not replace — keep original &token; as literal
-        i++
-        continue
-      } else if (token.charCodeAt(0) === 35 /* '#' */) {
-        // ---- Numeric / NCR reference ----
-        // NCR classification always runs first — prohibited codepoints must be
-        // caught regardless of numericAllowed.
-        const ncrResult = this._resolveNCR(token)
-        if (ncrResult === undefined) {
-          // 'leave' action — keep original &token; as-is
-          i++
-          continue
-        }
-        replacement = ncrResult // '' for remove, char string for allow
-        tier = LIMIT_TIER_BASE
-      } else {
-        // ---- Named reference ----
-        const resolved = this._resolveName(token)
-        replacement = resolved?.value
-        tier = resolved?.tier
-      }
-
-      if (replacement === undefined) {
-        // Unknown entity — leave as-is, advance past '&' only
-        i++
-        continue
-      }
-
-      // Flush literal chunk before this entity
-      if (i > last) chunks.push(str.slice(last, i))
-      chunks.push(replacement)
-      last = j + 1 // skip past ';'
-      i = last
-
-      // Apply expansion limits only if this tier is being tracked
-      if (checkLimits && this._tierCounts(tier)) {
-        if (limitExpansions) {
-          this._totalExpansions++
-          if (this._totalExpansions > this._maxTotalExpansions) {
-            throw new Error(
-              `[EntityReplacer] Entity expansion count limit exceeded: ` +
-                `${this._totalExpansions} > ${this._maxTotalExpansions}`
-            )
-          }
-        }
-        if (limitLength) {
-          // delta: replacement.length minus the raw &token; length (token.length + 2 for '&' and ';')
-          const delta = replacement.length - (token.length + 2)
-          if (delta > 0) {
-            this._expandedLength += delta
-            if (this._expandedLength > this._maxExpandedLength) {
-              throw new Error(
-                `[EntityReplacer] Expanded content length limit exceeded: ` +
-                  `${this._expandedLength} > ${this._maxExpandedLength}`
-              )
-            }
-          }
-        }
-      }
-    }
-
-    // Flush trailing literal
-    if (last < len) chunks.push(str.slice(last))
-
-    // If nothing was replaced, chunks is empty — return original
-    const result = chunks.length === 0 ? str : chunks.join("")
-
-    return this._postCheck(result, original)
-  }
-
-  // -------------------------------------------------------------------------
-  // Private: limit tier check
-  // -------------------------------------------------------------------------
-
-  /**
-   * Returns true if a resolved entity of the given tier should count
-   * against the expansion/length limits.
-   * @param {string} tier  — LIMIT_TIER_EXTERNAL | LIMIT_TIER_BASE
-   * @returns {boolean}
-   */
-  _tierCounts(tier) {
-    if (this._limitTiers.has(LIMIT_TIER_ALL)) return true
-    return this._limitTiers.has(tier)
-  }
-
-  // -------------------------------------------------------------------------
-  // Private: entity resolution
-  // -------------------------------------------------------------------------
-
-  /**
-   * Resolve a named entity token (without & and ;).
-   * Priority: inputMap > externalMap > baseMap
-   * Returns the resolved value tagged with its limit tier.
-   *
-   * @param {string} name
-   * @returns {{ value: string, tier: string }|undefined}
-   */
-  _resolveName(name) {
-    // input and external both count as 'external' tier for limit purposes —
-    // they are injected at runtime and are the untrusted surface.
-    if (name in this._inputMap)
-      return { value: this._inputMap[name], tier: LIMIT_TIER_EXTERNAL }
-    if (name in this._externalMap)
-      return { value: this._externalMap[name], tier: LIMIT_TIER_EXTERNAL }
-    if (name in this._baseMap)
-      return { value: this._baseMap[name], tier: LIMIT_TIER_BASE }
-    return undefined
-  }
-
-  /**
-   * Classify a codepoint and return the minimum action level that must be applied.
-   * Returns -1 when no minimum is imposed (normal allow path).
-   *
-   * Ranges checked (in priority order):
-   *   1. U+0000            — null, governed by nullNCR (always ≥ remove)
-   *   2. U+D800–U+DFFF     — surrogates, always prohibited (min: remove)
-   *   3. U+0001–U+001F \ {0x09,0x0A,0x0D}  — XML 1.0 restricted C0 (min: remove)
-   *      (skipped in XML 1.1 — C0 controls are allowed when written as NCRs)
-   *
-   * @param {number} cp  — codepoint
-   * @returns {number}   — minimum NCR_LEVEL value, or -1 for no restriction
-   */
-  _classifyNCR(cp) {
-    // 1. Null
-    if (cp === 0) return this._ncrNullLevel
-
-    // 2. Surrogates — always prohibited, minimum 'remove'
-    if (cp >= 0xd800 && cp <= 0xdfff) return NCR_LEVEL.remove
-
-    // 3. XML 1.0 restricted C0 controls
-    if (this._ncrXmlVersion === 1.0) {
-      if (cp >= 0x01 && cp <= 0x1f && !XML10_ALLOWED_C0.has(cp))
-        return NCR_LEVEL.remove
-    }
-
-    return -1 // no restriction
-  }
-
-  /**
-   * Execute a resolved NCR action.
-   *
-   * @param {number} action   — NCR_LEVEL value
-   * @param {string} token    — raw token (e.g. '#38') for error messages
-   * @param {number} cp       — codepoint, used only for error messages
-   * @returns {string|undefined}
-   *   - decoded character string  → 'allow'
-   *   - ''                        → 'remove'
-   *   - undefined                 → 'leave' (caller must skip past '&' only)
-   *   - throws Error              → 'throw'
-   */
-  _applyNCRAction(action, token, cp) {
-    switch (action) {
-      case NCR_LEVEL.allow:
-        return String.fromCodePoint(cp)
-      case NCR_LEVEL.remove:
-        return ""
-      case NCR_LEVEL.leave:
-        return undefined // signal: keep literal
-      case NCR_LEVEL.throw:
-        throw new Error(
-          `[EntityDecoder] Prohibited numeric character reference ` +
-            `&${token}; (U+${cp.toString(16).toUpperCase().padStart(4, "0")})`
-        )
-      default:
-        return String.fromCodePoint(cp)
-    }
-  }
-
-  /**
-   * Full NCR resolution pipeline for a numeric token.
-   *
-   * Steps:
-   *   1. Parse the codepoint (decimal or hex).
-   *   2. Validate the raw codepoint range (NaN, <0, >0x10FFFF).
-   *   3. If numericAllowed is false and no minimum restriction applies → leave as-is.
-   *   4. Classify the codepoint to find the minimum required action level.
-   *   5. Resolve effective action = max(onNCR, minimum).
-   *   6. Apply and return.
-   *
-   * @param {string} token  — e.g. '#38', '#x26', '#X26'
-   * @returns {string|undefined}
-   *   - string (incl. '')  — replacement ('' = remove)
-   *   - undefined          — leave original &token; as-is
-   */
-  _resolveNCR(token) {
-    // Step 1: parse codepoint
-    const second = token.charCodeAt(1)
-    let cp
-    if (second === 120 /* x */ || second === 88 /* X */) {
-      cp = parseInt(token.slice(2), 16)
-    } else {
-      cp = parseInt(token.slice(1), 10)
-    }
-
-    // Step 2: out-of-range → leave as-is unconditionally
-    if (Number.isNaN(cp) || cp < 0 || cp > 0x10ffff) return undefined
-
-    // Step 3: classify to get minimum action level
-    const minimum = this._classifyNCR(cp)
-
-    // Step 4: if numericAllowed is false and no hard minimum → leave
-    if (!this._numericAllowed && minimum < NCR_LEVEL.remove) return undefined
-
-    // Step 5: effective action = max(configured onNCR, range minimum)
-    const effective =
-      minimum === -1 ? this._ncrOnLevel : Math.max(this._ncrOnLevel, minimum)
-
-    // Step 6: apply
-    return this._applyNCRAction(effective, token, cp)
-  }
 } // CONCATENATED MODULE: ./node_modules/fast-xml-parser/src/xmlparser/OrderedObjParser.js
 ///@ts-check
 
@@ -64826,6 +63858,38 @@ class OrderedObjParser {
     this.options = options
     this.currentNode = null
     this.tagsNodeStack = []
+    this.docTypeEntities = {}
+    this.lastEntities = {
+      apos: { regex: /&(apos|#39|#x27);/g, val: "'" },
+      gt: { regex: /&(gt|#62|#x3E);/g, val: ">" },
+      lt: { regex: /&(lt|#60|#x3C);/g, val: "<" },
+      quot: { regex: /&(quot|#34|#x22);/g, val: '"' }
+    }
+    this.ampEntity = { regex: /&(amp|#38|#x26);/g, val: "&" }
+    this.htmlEntities = {
+      space: { regex: /&(nbsp|#160);/g, val: " " },
+      // "lt" : { regex: /&(lt|#60);/g, val: "<" },
+      // "gt" : { regex: /&(gt|#62);/g, val: ">" },
+      // "amp" : { regex: /&(amp|#38);/g, val: "&" },
+      // "quot" : { regex: /&(quot|#34);/g, val: "\"" },
+      // "apos" : { regex: /&(apos|#39);/g, val: "'" },
+      cent: { regex: /&(cent|#162);/g, val: "¢" },
+      pound: { regex: /&(pound|#163);/g, val: "£" },
+      yen: { regex: /&(yen|#165);/g, val: "¥" },
+      euro: { regex: /&(euro|#8364);/g, val: "€" },
+      copyright: { regex: /&(copy|#169);/g, val: "©" },
+      reg: { regex: /&(reg|#174);/g, val: "®" },
+      inr: { regex: /&(inr|#8377);/g, val: "₹" },
+      num_dec: {
+        regex: /&#([0-9]{1,7});/g,
+        val: (_, str) => fromCodePoint(str, 10, "&#")
+      },
+      num_hex: {
+        regex: /&#x([0-9a-fA-F]{1,6});/g,
+        val: (_, str) => fromCodePoint(str, 16, "&#x")
+      }
+    }
+    this.addExternalEntities = addExternalEntities
     this.parseXml = parseXml
     this.parseTextData = parseTextData
     this.resolveNameSpace = resolveNameSpace
@@ -64840,25 +63904,6 @@ class OrderedObjParser {
     )
     this.entityExpansionCount = 0
     this.currentExpandedLength = 0
-    let namedEntities = { ...XML }
-    if (this.options.entityDecoder) {
-      this.entityDecoder = this.options.entityDecoder
-    } else {
-      if (typeof this.options.htmlEntities === "object")
-        namedEntities = this.options.htmlEntities
-      else if (this.options.htmlEntities === true)
-        namedEntities = { ...COMMON_HTML, ...CURRENCY }
-      this.entityDecoder = new EntityDecoder({
-        namedEntities: namedEntities,
-        numericAllowed: this.options.htmlEntities,
-        limit: {
-          maxTotalExpansions: this.options.processEntities.maxTotalExpansions,
-          maxExpandedLength: this.options.processEntities.maxExpandedLength,
-          applyLimitsTo: this.options.processEntities.appliesTo
-        }
-        //postCheck: resolved => resolved
-      })
-    }
 
     // Initialize path matcher for path-expression-matcher
     this.matcher = new Matcher()
@@ -64871,20 +63916,30 @@ class OrderedObjParser {
     this.isCurrentNodeStopNode = false
 
     // Pre-compile stopNodes expressions
-    this.stopNodeExpressionsSet = new ExpressionSet()
-    const stopNodesOpts = this.options.stopNodes
-    if (stopNodesOpts && stopNodesOpts.length > 0) {
-      for (let i = 0; i < stopNodesOpts.length; i++) {
-        const stopNodeExp = stopNodesOpts[i]
+    if (this.options.stopNodes && this.options.stopNodes.length > 0) {
+      this.stopNodeExpressions = []
+      for (let i = 0; i < this.options.stopNodes.length; i++) {
+        const stopNodeExp = this.options.stopNodes[i]
         if (typeof stopNodeExp === "string") {
           // Convert string to Expression object
-          this.stopNodeExpressionsSet.add(new Expression(stopNodeExp))
+          this.stopNodeExpressions.push(new Expression(stopNodeExp))
         } else if (stopNodeExp instanceof Expression) {
           // Already an Expression object
-          this.stopNodeExpressionsSet.add(stopNodeExp)
+          this.stopNodeExpressions.push(stopNodeExp)
         }
       }
-      this.stopNodeExpressionsSet.seal()
+    }
+  }
+}
+
+function addExternalEntities(externalEntities) {
+  const entKeys = Object.keys(externalEntities)
+  for (let i = 0; i < entKeys.length; i++) {
+    const ent = entKeys[i]
+    const escaped = ent.replace(/[.\-+*:]/g, "\\.")
+    this.lastEntities[ent] = {
+      regex: new RegExp("&" + escaped + ";", "g"),
+      val: externalEntities[ent]
     }
   }
 }
@@ -64907,17 +63962,16 @@ function parseTextData(
   isLeafNode,
   escapeEntities
 ) {
-  const options = this.options
   if (val !== undefined) {
-    if (options.trimValues && !dontTrim) {
+    if (this.options.trimValues && !dontTrim) {
       val = val.trim()
     }
     if (val.length > 0) {
       if (!escapeEntities) val = this.replaceEntitiesValue(val, tagName, jPath)
 
       // Pass jPath string or matcher based on options.jPath setting
-      const jPathOrMatcher = options.jPath ? jPath.toString() : jPath
-      const newval = options.tagValueProcessor(
+      const jPathOrMatcher = this.options.jPath ? jPath.toString() : jPath
+      const newval = this.options.tagValueProcessor(
         tagName,
         val,
         jPathOrMatcher,
@@ -64930,19 +63984,19 @@ function parseTextData(
       } else if (typeof newval !== typeof val || newval !== val) {
         //overwrite
         return newval
-      } else if (options.trimValues) {
+      } else if (this.options.trimValues) {
         return parseValue(
           val,
-          options.parseTagValue,
-          options.numberParseOptions
+          this.options.parseTagValue,
+          this.options.numberParseOptions
         )
       } else {
         const trimmedVal = val.trim()
         if (trimmedVal === val) {
           return parseValue(
             val,
-            options.parseTagValue,
-            options.numberParseOptions
+            this.options.parseTagValue,
+            this.options.numberParseOptions
           )
         } else {
           return val
@@ -64973,12 +64027,8 @@ const attrsRegx = new RegExp(
   "gm"
 )
 
-function buildAttributesMap(attrStr, jPath, tagName, force = false) {
-  const options = this.options
-  if (
-    force === true ||
-    (options.ignoreAttributes !== true && typeof attrStr === "string")
-  ) {
+function buildAttributesMap(attrStr, jPath, tagName) {
+  if (this.options.ignoreAttributes !== true && typeof attrStr === "string") {
     // attrStr = attrStr.replace(/\r?\n/g, ' ');
     //attrStr = attrStr || attrStr.trim();
 
@@ -64986,88 +64036,109 @@ function buildAttributesMap(attrStr, jPath, tagName, force = false) {
     const len = matches.length //don't make it inline
     const attrs = {}
 
-    // Pre-process values once: trim + entity replacement
-    // Reused in both matcher update and second pass
-    const processedVals = new Array(len)
-    let hasRawAttrs = false
+    // First pass: parse all attributes and update matcher with raw values
+    // This ensures the matcher has all attribute values when processors run
     const rawAttrsForMatcher = {}
-
     for (let i = 0; i < len; i++) {
       const attrName = this.resolveNameSpace(matches[i][1])
       const oldVal = matches[i][4]
 
       if (attrName.length && oldVal !== undefined) {
-        let val = oldVal
-        if (options.trimValues) val = val.trim()
-        val = this.replaceEntitiesValue(val, tagName, this.readonlyMatcher)
-        processedVals[i] = val
-
-        rawAttrsForMatcher[attrName] = val
-        hasRawAttrs = true
+        let parsedVal = oldVal
+        if (this.options.trimValues) {
+          parsedVal = parsedVal.trim()
+        }
+        parsedVal = this.replaceEntitiesValue(
+          parsedVal,
+          tagName,
+          this.readonlyMatcher
+        )
+        rawAttrsForMatcher[attrName] = parsedVal
       }
     }
 
-    // Update matcher ONCE before second pass, if applicable
-    if (hasRawAttrs && typeof jPath === "object" && jPath.updateCurrent) {
+    // Update matcher with raw attribute values BEFORE running processors
+    if (
+      Object.keys(rawAttrsForMatcher).length > 0 &&
+      typeof jPath === "object" &&
+      jPath.updateCurrent
+    ) {
       jPath.updateCurrent(rawAttrsForMatcher)
     }
 
-    // Hoist toString() once — path doesn't change during attribute processing
-    const jPathStr = options.jPath ? jPath.toString() : this.readonlyMatcher
-
-    // Second pass: apply processors, build final attrs
-    let hasAttrs = false
+    // Second pass: now process attributes with matcher having full attribute context
     for (let i = 0; i < len; i++) {
       const attrName = this.resolveNameSpace(matches[i][1])
 
-      if (this.ignoreAttributesFn(attrName, jPathStr)) continue
+      // Convert jPath to string if needed for ignoreAttributesFn
+      const jPathStr = this.options.jPath
+        ? jPath.toString()
+        : this.readonlyMatcher
+      if (this.ignoreAttributesFn(attrName, jPathStr)) {
+        continue
+      }
 
-      let aName = options.attributeNamePrefix + attrName
+      let oldVal = matches[i][4]
+      let aName = this.options.attributeNamePrefix + attrName
 
       if (attrName.length) {
-        if (options.transformAttributeName) {
-          aName = options.transformAttributeName(aName)
+        if (this.options.transformAttributeName) {
+          aName = this.options.transformAttributeName(aName)
         }
-        aName = sanitizeName(aName, options)
+        //if (aName === "__proto__") aName = "#__proto__";
+        aName = sanitizeName(aName, this.options)
 
-        if (matches[i][4] !== undefined) {
-          // Reuse already-processed value — no double entity replacement
-          const oldVal = processedVals[i]
+        if (oldVal !== undefined) {
+          if (this.options.trimValues) {
+            oldVal = oldVal.trim()
+          }
+          oldVal = this.replaceEntitiesValue(
+            oldVal,
+            tagName,
+            this.readonlyMatcher
+          )
 
-          const newVal = options.attributeValueProcessor(
+          // Pass jPath string or readonlyMatcher based on options.jPath setting
+          const jPathOrMatcher = this.options.jPath
+            ? jPath.toString()
+            : this.readonlyMatcher
+          const newVal = this.options.attributeValueProcessor(
             attrName,
             oldVal,
-            jPathStr
+            jPathOrMatcher
           )
           if (newVal === null || newVal === undefined) {
+            //don't parse
             attrs[aName] = oldVal
           } else if (typeof newVal !== typeof oldVal || newVal !== oldVal) {
+            //overwrite
             attrs[aName] = newVal
           } else {
+            //parse
             attrs[aName] = parseValue(
               oldVal,
-              options.parseAttributeValue,
-              options.numberParseOptions
+              this.options.parseAttributeValue,
+              this.options.numberParseOptions
             )
           }
-          hasAttrs = true
-        } else if (options.allowBooleanAttributes) {
+        } else if (this.options.allowBooleanAttributes) {
           attrs[aName] = true
-          hasAttrs = true
         }
       }
     }
 
-    if (!hasAttrs) return
-
-    if (options.attributesGroupName) {
+    if (!Object.keys(attrs).length) {
+      return
+    }
+    if (this.options.attributesGroupName) {
       const attrCollection = {}
-      attrCollection[options.attributesGroupName] = attrs
+      attrCollection[this.options.attributesGroupName] = attrs
       return attrCollection
     }
     return attrs
   }
 }
+
 const parseXml = function (xmlData) {
   xmlData = xmlData.replace(/\r\n?/g, "\n") //TODO: remove this line
   const xmlObj = new XmlNode("!xml")
@@ -65076,23 +64147,20 @@ const parseXml = function (xmlData) {
 
   // Reset matcher for new document
   this.matcher.reset()
-  this.entityDecoder.reset()
 
   // Reset entity expansion counters for this document
   this.entityExpansionCount = 0
   this.currentExpandedLength = 0
-  const options = this.options
-  const docTypeReader = new DocTypeReader(options.processEntities)
-  const xmlLen = xmlData.length
-  for (let i = 0; i < xmlLen; i++) {
+
+  const docTypeReader = new DocTypeReader(this.options.processEntities)
+  for (let i = 0; i < xmlData.length; i++) {
     //for each char in XML data
     const ch = xmlData[i]
     if (ch === "<") {
       // const nextIndex = i+1;
       // const _2ndChar = xmlData[nextIndex];
-      const c1 = xmlData.charCodeAt(i + 1)
-      if (c1 === 47) {
-        //Closing Tag '/'
+      if (xmlData[i + 1] === "/") {
+        //Closing Tag
         const closeIndex = findClosingIndex(
           xmlData,
           ">",
@@ -65101,7 +64169,7 @@ const parseXml = function (xmlData) {
         )
         let tagName = xmlData.substring(i + 2, closeIndex).trim()
 
-        if (options.removeNSPrefix) {
+        if (this.options.removeNSPrefix) {
           const colonIndex = tagName.indexOf(":")
           if (colonIndex !== -1) {
             tagName = tagName.substr(colonIndex + 1)
@@ -65109,10 +64177,10 @@ const parseXml = function (xmlData) {
         }
 
         tagName = transformTagName(
-          options.transformTagName,
+          this.options.transformTagName,
           tagName,
           "",
-          options
+          this.options
         ).tagName
 
         if (currentNode) {
@@ -65125,12 +64193,15 @@ const parseXml = function (xmlData) {
 
         //check if last tag of nested tag was unpaired tag
         const lastTagName = this.matcher.getCurrentTag()
-        if (tagName && options.unpairedTagsSet.has(tagName)) {
+        if (tagName && this.options.unpairedTags.indexOf(tagName) !== -1) {
           throw new Error(
             `Unpaired tag can not be used as closing tag: </${tagName}>`
           )
         }
-        if (lastTagName && options.unpairedTagsSet.has(lastTagName)) {
+        if (
+          lastTagName &&
+          this.options.unpairedTags.indexOf(lastTagName) !== -1
+        ) {
           // Pop the unpaired tag
           this.matcher.pop()
           this.tagsNodeStack.pop()
@@ -65142,9 +64213,7 @@ const parseXml = function (xmlData) {
         currentNode = this.tagsNodeStack.pop() //avoid recursion, set the parent tag scope
         textData = ""
         i = closeIndex
-      } else if (c1 === 63) {
-        //'?'
-
+      } else if (xmlData[i + 1] === "?") {
         let tagData = readTagExp(xmlData, i, false, "?>")
         if (!tagData) throw new Error("Pi Tag is not closed.")
 
@@ -65153,49 +64222,34 @@ const parseXml = function (xmlData) {
           currentNode,
           this.readonlyMatcher
         )
-        const attsMap = this.buildAttributesMap(
-          tagData.tagExp,
-          this.matcher,
-          tagData.tagName,
-          true
-        )
-        if (attsMap) {
-          const ver = attsMap[this.options.attributeNamePrefix + "version"]
-          this.entityDecoder.setXmlVersion(Number(ver) || 1.0)
-        }
         if (
-          (options.ignoreDeclaration && tagData.tagName === "?xml") ||
-          options.ignorePiTags
+          (this.options.ignoreDeclaration && tagData.tagName === "?xml") ||
+          this.options.ignorePiTags
         ) {
           //do nothing
         } else {
           const childNode = new XmlNode(tagData.tagName)
-          childNode.add(options.textNodeName, "")
+          childNode.add(this.options.textNodeName, "")
 
-          if (
-            tagData.tagName !== tagData.tagExp &&
-            tagData.attrExpPresent &&
-            options.ignoreAttributes !== true
-          ) {
-            childNode[":@"] = attsMap
+          if (tagData.tagName !== tagData.tagExp && tagData.attrExpPresent) {
+            childNode[":@"] = this.buildAttributesMap(
+              tagData.tagExp,
+              this.matcher,
+              tagData.tagName
+            )
           }
           this.addChild(currentNode, childNode, this.readonlyMatcher, i)
         }
 
         i = tagData.closeIndex + 1
-      } else if (
-        c1 === 33 &&
-        xmlData.charCodeAt(i + 2) === 45 &&
-        xmlData.charCodeAt(i + 3) === 45
-      ) {
-        //'!--'
+      } else if (xmlData.substr(i + 1, 3) === "!--") {
         const endIndex = findClosingIndex(
           xmlData,
           "-->",
           i + 4,
           "Comment is not closed."
         )
-        if (options.commentPropName) {
+        if (this.options.commentPropName) {
           const comment = xmlData.substring(i + 4, endIndex - 2)
 
           textData = this.saveTextToParentTag(
@@ -65204,18 +64258,16 @@ const parseXml = function (xmlData) {
             this.readonlyMatcher
           )
 
-          currentNode.add(options.commentPropName, [
-            { [options.textNodeName]: comment }
+          currentNode.add(this.options.commentPropName, [
+            { [this.options.textNodeName]: comment }
           ])
         }
         i = endIndex
-      } else if (c1 === 33 && xmlData.charCodeAt(i + 2) === 68) {
-        //'!D'
+      } else if (xmlData.substr(i + 1, 2) === "!D") {
         const result = docTypeReader.readDocType(xmlData, i)
-        this.entityDecoder.addInputEntities(result.entities)
+        this.docTypeEntities = result.entities
         i = result.i
-      } else if (c1 === 33 && xmlData.charCodeAt(i + 2) === 91) {
-        // '!['
+      } else if (xmlData.substr(i + 1, 2) === "![") {
         const closeIndex =
           findClosingIndex(xmlData, "]]>", i, "CDATA is not closed.") - 2
         const tagExp = xmlData.substring(i + 9, closeIndex)
@@ -65238,25 +64290,25 @@ const parseXml = function (xmlData) {
         if (val == undefined) val = ""
 
         //cdata should be set even if it is 0 length string
-        if (options.cdataPropName) {
-          currentNode.add(options.cdataPropName, [
-            { [options.textNodeName]: tagExp }
+        if (this.options.cdataPropName) {
+          currentNode.add(this.options.cdataPropName, [
+            { [this.options.textNodeName]: tagExp }
           ])
         } else {
-          currentNode.add(options.textNodeName, val)
+          currentNode.add(this.options.textNodeName, val)
         }
 
         i = closeIndex + 2
       } else {
         //Opening tag
-        let result = readTagExp(xmlData, i, options.removeNSPrefix)
+        let result = readTagExp(xmlData, i, this.options.removeNSPrefix)
 
         // Safety check: readTagExp can return undefined
         if (!result) {
           // Log context for debugging
           const context = xmlData.substring(
             Math.max(0, i - 50),
-            Math.min(xmlLen, i + 50)
+            Math.min(xmlData.length, i + 50)
           )
           throw new Error(
             `readTagExp returned undefined at position ${i}. Context: "${context}"`
@@ -65270,18 +64322,18 @@ const parseXml = function (xmlData) {
         let closeIndex = result.closeIndex
 
         ;({ tagName, tagExp } = transformTagName(
-          options.transformTagName,
+          this.options.transformTagName,
           tagName,
           tagExp,
-          options
+          this.options
         ))
 
         if (
-          options.strictReservedNames &&
-          (tagName === options.commentPropName ||
-            tagName === options.cdataPropName ||
-            tagName === options.textNodeName ||
-            tagName === options.attributesGroupName)
+          this.options.strictReservedNames &&
+          (tagName === this.options.commentPropName ||
+            tagName === this.options.cdataPropName ||
+            tagName === this.options.textNodeName ||
+            tagName === this.options.attributesGroupName)
         ) {
           throw new Error(`Invalid tag name: ${tagName}`)
         }
@@ -65301,7 +64353,10 @@ const parseXml = function (xmlData) {
 
         //check if last tag was unpaired tag
         const lastTag = currentNode
-        if (lastTag && options.unpairedTagsSet.has(lastTag.tagname)) {
+        if (
+          lastTag &&
+          this.options.unpairedTags.indexOf(lastTag.tagname) !== -1
+        ) {
           currentNode = this.tagsNodeStack.pop()
           this.matcher.pop()
         }
@@ -65346,14 +64401,16 @@ const parseXml = function (xmlData) {
 
           if (prefixedAttrs) {
             // Extract raw attributes (without prefix) for our use
-            //TODO: seems a performance overhead
-            rawAttrs = extractRawAttributes(prefixedAttrs, options)
+            rawAttrs = extractRawAttributes(prefixedAttrs, this.options)
           }
         }
 
         // Now check if this is a stop node (after attributes are set)
         if (tagName !== xmlObj.tagname) {
-          this.isCurrentNodeStopNode = this.isItStopNode()
+          this.isCurrentNodeStopNode = this.isItStopNode(
+            this.stopNodeExpressions,
+            this.matcher
+          )
         }
 
         const startIndex = i
@@ -65365,7 +64422,7 @@ const parseXml = function (xmlData) {
             i = result.closeIndex
           }
           //unpaired tag
-          else if (options.unpairedTagsSet.has(tagName)) {
+          else if (this.options.unpairedTags.indexOf(tagName) !== -1) {
             i = result.closeIndex
           }
           //normal tag
@@ -65388,7 +64445,7 @@ const parseXml = function (xmlData) {
           }
 
           // For stop nodes, store raw content as-is without any processing
-          childNode.add(options.textNodeName, tagContent)
+          childNode.add(this.options.textNodeName, tagContent)
 
           this.matcher.pop() // Pop the stop node tag
           this.isCurrentNodeStopNode = false // Reset flag
@@ -65403,10 +64460,10 @@ const parseXml = function (xmlData) {
           //selfClosing tag
           if (isSelfClosing) {
             ;({ tagName, tagExp } = transformTagName(
-              options.transformTagName,
+              this.options.transformTagName,
               tagName,
               tagExp,
-              options
+              this.options
             ))
 
             const childNode = new XmlNode(tagName)
@@ -65421,7 +64478,7 @@ const parseXml = function (xmlData) {
             )
             this.matcher.pop() // Pop self-closing tag
             this.isCurrentNodeStopNode = false // Reset flag
-          } else if (options.unpairedTagsSet.has(tagName)) {
+          } else if (this.options.unpairedTags.indexOf(tagName) !== -1) {
             //unpaired tag
             const childNode = new XmlNode(tagName)
             if (prefixedAttrs) {
@@ -65442,7 +64499,7 @@ const parseXml = function (xmlData) {
           //opening tag
           else {
             const childNode = new XmlNode(tagName)
-            if (this.tagsNodeStack.length > options.maxNestedTags) {
+            if (this.tagsNodeStack.length > this.options.maxNestedTags) {
               throw new Error("Maximum nested tags exceeded")
             }
             this.tagsNodeStack.push(currentNode)
@@ -65522,7 +64579,85 @@ function OrderedObjParser_replaceEntitiesValue(val, tagName, jPath) {
     }
   }
 
-  return this.entityDecoder.decode(val)
+  // Replace DOCTYPE entities
+  for (const entityName of Object.keys(this.docTypeEntities)) {
+    const entity = this.docTypeEntities[entityName]
+    const matches = val.match(entity.regx)
+
+    if (matches) {
+      // Track expansions
+      this.entityExpansionCount += matches.length
+
+      // Check expansion limit
+      if (
+        entityConfig.maxTotalExpansions &&
+        this.entityExpansionCount > entityConfig.maxTotalExpansions
+      ) {
+        throw new Error(
+          `Entity expansion limit exceeded: ${this.entityExpansionCount} > ${entityConfig.maxTotalExpansions}`
+        )
+      }
+
+      // Store length before replacement
+      const lengthBefore = val.length
+      val = val.replace(entity.regx, entity.val)
+
+      // Check expanded length immediately after replacement
+      if (entityConfig.maxExpandedLength) {
+        this.currentExpandedLength += val.length - lengthBefore
+
+        if (this.currentExpandedLength > entityConfig.maxExpandedLength) {
+          throw new Error(
+            `Total expanded content size exceeded: ${this.currentExpandedLength} > ${entityConfig.maxExpandedLength}`
+          )
+        }
+      }
+    }
+  }
+  // Replace standard entities
+  for (const entityName of Object.keys(this.lastEntities)) {
+    const entity = this.lastEntities[entityName]
+    const matches = val.match(entity.regex)
+    if (matches) {
+      this.entityExpansionCount += matches.length
+      if (
+        entityConfig.maxTotalExpansions &&
+        this.entityExpansionCount > entityConfig.maxTotalExpansions
+      ) {
+        throw new Error(
+          `Entity expansion limit exceeded: ${this.entityExpansionCount} > ${entityConfig.maxTotalExpansions}`
+        )
+      }
+    }
+    val = val.replace(entity.regex, entity.val)
+  }
+  if (val.indexOf("&") === -1) return val
+
+  // Replace HTML entities if enabled
+  if (this.options.htmlEntities) {
+    for (const entityName of Object.keys(this.htmlEntities)) {
+      const entity = this.htmlEntities[entityName]
+      const matches = val.match(entity.regex)
+      if (matches) {
+        //console.log(matches);
+        this.entityExpansionCount += matches.length
+        if (
+          entityConfig.maxTotalExpansions &&
+          this.entityExpansionCount > entityConfig.maxTotalExpansions
+        ) {
+          throw new Error(
+            `Entity expansion limit exceeded: ${this.entityExpansionCount} > ${entityConfig.maxTotalExpansions}`
+          )
+        }
+      }
+      val = val.replace(entity.regex, entity.val)
+    }
+  }
+
+  // Replace ampersand entity last
+  val = val.replace(this.ampEntity.regex, this.ampEntity.val)
+
+  return val
 }
 
 function saveTextToParentTag(textData, parentNode, matcher, isLeafNode) {
@@ -65546,14 +64681,20 @@ function saveTextToParentTag(textData, parentNode, matcher, isLeafNode) {
   return textData
 }
 
+//TODO: use jPath to simplify the logic
 /**
  * @param {Array<Expression>} stopNodeExpressions - Array of compiled Expression objects
  * @param {Matcher} matcher - Current path matcher
  */
-function isItStopNode() {
-  if (this.stopNodeExpressionsSet.size === 0) return false
+function isItStopNode(stopNodeExpressions, matcher) {
+  if (!stopNodeExpressions || stopNodeExpressions.length === 0) return false
 
-  return this.matcher.matchesAny(this.stopNodeExpressionsSet)
+  for (let i = 0; i < stopNodeExpressions.length; i++) {
+    if (matcher.matches(stopNodeExpressions[i])) {
+      return true
+    }
+  }
+  return false
 }
 
 /**
@@ -65563,35 +64704,32 @@ function isItStopNode() {
  * @returns
  */
 function tagExpWithClosingIndex(xmlData, i, closingChar = ">") {
-  let attrBoundary = 0
-  const chars = []
-  const len = xmlData.length
-  const closeCode0 = closingChar.charCodeAt(0)
-  const closeCode1 = closingChar.length > 1 ? closingChar.charCodeAt(1) : -1
-
-  for (let index = i; index < len; index++) {
-    const code = xmlData.charCodeAt(index)
-
+  let attrBoundary
+  let tagExp = ""
+  for (let index = i; index < xmlData.length; index++) {
+    let ch = xmlData[index]
     if (attrBoundary) {
-      if (code === attrBoundary) attrBoundary = 0
-    } else if (code === 34 || code === 39) {
-      // " or '
-      attrBoundary = code
-    } else if (code === closeCode0) {
-      if (closeCode1 !== -1) {
-        if (xmlData.charCodeAt(index + 1) === closeCode1) {
-          return { data: String.fromCharCode(...chars), index }
+      if (ch === attrBoundary) attrBoundary = "" //reset
+    } else if (ch === '"' || ch === "'") {
+      attrBoundary = ch
+    } else if (ch === closingChar[0]) {
+      if (closingChar[1]) {
+        if (xmlData[index + 1] === closingChar[1]) {
+          return {
+            data: tagExp,
+            index: index
+          }
         }
       } else {
-        return { data: String.fromCharCode(...chars), index }
+        return {
+          data: tagExp,
+          index: index
+        }
       }
-    } else if (code === 9) {
-      // \t
-      chars.push(32) // space
-      continue
+    } else if (ch === "\t") {
+      ch = " "
     }
-
-    chars.push(code)
+    tagExp += ch
   }
 }
 
@@ -65602,12 +64740,6 @@ function findClosingIndex(xmlData, str, i, errMsg) {
   } else {
     return closingIndex + str.length - 1
   }
-}
-
-function findClosingChar(xmlData, char, i, errMsg) {
-  const closingIndex = xmlData.indexOf(char, i)
-  if (closingIndex === -1) throw new Error(errMsg)
-  return closingIndex // no offset needed
 }
 
 function readTagExp(xmlData, i, removeNSPrefix, closingChar = ">") {
@@ -65652,13 +64784,11 @@ function readStopNodeData(xmlData, tagName, i) {
   // Starting at 1 since we already have an open tag
   let openTagCount = 1
 
-  const xmllen = xmlData.length
-  for (; i < xmllen; i++) {
+  for (; i < xmlData.length; i++) {
     if (xmlData[i] === "<") {
-      const c1 = xmlData.charCodeAt(i + 1)
-      if (c1 === 47) {
-        //close tag '/'
-        const closeIndex = findClosingChar(
+      if (xmlData[i + 1] === "/") {
+        //close tag
+        const closeIndex = findClosingIndex(
           xmlData,
           ">",
           i,
@@ -65675,8 +64805,7 @@ function readStopNodeData(xmlData, tagName, i) {
           }
         }
         i = closeIndex
-      } else if (c1 === 63) {
-        //?
+      } else if (xmlData[i + 1] === "?") {
         const closeIndex = findClosingIndex(
           xmlData,
           "?>",
@@ -65684,12 +64813,7 @@ function readStopNodeData(xmlData, tagName, i) {
           "StopNode is not closed."
         )
         i = closeIndex
-      } else if (
-        c1 === 33 &&
-        xmlData.charCodeAt(i + 2) === 45 &&
-        xmlData.charCodeAt(i + 3) === 45
-      ) {
-        // '!--'
+      } else if (xmlData.substr(i + 1, 3) === "!--") {
         const closeIndex = findClosingIndex(
           xmlData,
           "-->",
@@ -65697,8 +64821,7 @@ function readStopNodeData(xmlData, tagName, i) {
           "StopNode is not closed."
         )
         i = closeIndex
-      } else if (c1 === 33 && xmlData.charCodeAt(i + 2) === 91) {
-        // '!['
+      } else if (xmlData.substr(i + 1, 2) === "![") {
         const closeIndex =
           findClosingIndex(xmlData, "]]>", i, "StopNode is not closed.") - 2
         i = closeIndex
@@ -65973,7 +65096,7 @@ class XMLParser {
       }
     }
     const orderedObjParser = new OrderedObjParser(this.options)
-    orderedObjParser.entityDecoder.setExternalEntities(this.externalEntities)
+    orderedObjParser.addExternalEntities(this.externalEntities)
     const orderedResult = orderedObjParser.parseXml(xmlData)
     if (this.options.preserveOrder || orderedResult === undefined)
       return orderedResult
@@ -66034,34 +65157,39 @@ const xml_common_XML_CHARKEY = "_" // CONCATENATED MODULE: ./node_modules/@azure
 // Licensed under the MIT License.
 
 function getCommonOptions(options) {
+  var _a
   return {
     attributesGroupName: xml_common_XML_ATTRKEY,
-    textNodeName: options.xmlCharKey ?? xml_common_XML_CHARKEY,
+    textNodeName:
+      (_a = options.xmlCharKey) !== null && _a !== void 0
+        ? _a
+        : xml_common_XML_CHARKEY,
     ignoreAttributes: false,
     suppressBooleanAttributes: false
   }
 }
 function getSerializerOptions(options = {}) {
-  return {
-    ...getCommonOptions(options),
+  var _a, _b
+  return Object.assign(Object.assign({}, getCommonOptions(options)), {
     attributeNamePrefix: "@_",
     format: true,
     suppressEmptyNode: true,
     indentBy: "",
-    rootNodeName: options.rootName ?? "root",
-    cdataPropName: options.cdataPropName ?? "__cdata"
-  }
+    rootNodeName:
+      (_a = options.rootName) !== null && _a !== void 0 ? _a : "root",
+    cdataPropName:
+      (_b = options.cdataPropName) !== null && _b !== void 0 ? _b : "__cdata"
+  })
 }
 function getParserOptions(options = {}) {
-  return {
-    ...getCommonOptions(options),
+  return Object.assign(Object.assign({}, getCommonOptions(options)), {
     parseAttributeValue: false,
     parseTagValue: false,
     attributeNamePrefix: "",
     stopNodes: options.stopNodes,
     processEntities: true,
     trimValues: false
-  }
+  })
 }
 /**
  * Converts given JSON object to XML string
@@ -66103,7 +65231,7 @@ async function parseXML(str, opts = {}) {
   if (!opts.includeRoot) {
     for (const key of Object.keys(parsedXml)) {
       const value = parsedXml[key]
-      return typeof value === "object" ? { ...value } : value
+      return typeof value === "object" ? Object.assign({}, value) : value
     }
   }
   return parsedXml
@@ -99945,8 +99073,68 @@ function saveCacheV2(paths_1, key_1, options_1) {
       return cacheId
     }
   )
-} // CONCATENATED MODULE: ./index.js
+}
 //# sourceMappingURL=cache.js.map
+// EXTERNAL MODULE: ./node_modules/fast-diff/diff.js
+var diff = __nccwpck_require__(1363) // CONCATENATED MODULE: ./index.js
+const RED = "\x1b[31m",
+  GREEN = "\x1b[32m"
+const RED_HL = "\x1b[41;30m",
+  GREEN_HL = "\x1b[42;30m",
+  RESET = "\x1b[m"
+
+async function runDiffHighlight() {
+  const rl = external_readline_namespaceObject.createInterface({
+    input: process.stdin,
+    crlfDelay: Infinity
+  })
+  let olds = [],
+    news = []
+
+  function flush() {
+    if (olds.length === 1 && news.length === 1) {
+      const oldText = olds[0].slice(1),
+        newText = news[0].slice(1)
+      const changes = diff(oldText, newText)
+      let oldOut = RED + "-",
+        newOut = GREEN + "+"
+      for (const [op, text] of changes) {
+        if (op === -1) oldOut += RED_HL + text + RED
+        else if (op === 1) newOut += GREEN_HL + text + GREEN
+        else {
+          oldOut += text
+          newOut += text
+        }
+      }
+      process.stdout.write(oldOut + RESET + "\n")
+      process.stdout.write(newOut + RESET + "\n")
+    } else {
+      olds.forEach(l => process.stdout.write(RED + l + RESET + "\n"))
+      news.forEach(l => process.stdout.write(GREEN + l + RESET + "\n"))
+    }
+    olds = []
+    news = []
+  }
+
+  rl.on("line", line => {
+    if (line.startsWith("-") && !line.startsWith("---")) {
+      if (news.length) flush()
+      olds.push(line)
+    } else if (line.startsWith("+") && !line.startsWith("+++")) {
+      news.push(line)
+    } else {
+      flush()
+      process.stdout.write(line + "\n")
+    }
+  })
+  await new Promise(resolve =>
+    rl.on("close", () => {
+      flush()
+      resolve()
+    })
+  )
+}
+
 async function setup() {
   try {
     const version = getInput("version")
@@ -100023,17 +99211,7 @@ async function setup() {
       const wrapperPath = external_path_.join(nfTestDir, "nft-diff")
       await lib.writeFile(
         wrapperPath,
-        [
-          "#!/bin/bash",
-          'dh="$(git --exec-path 2>/dev/null)/diff-highlight"',
-          '[ ! -f "$dh" ] && dh="$(command -v diff-highlight 2>/dev/null)"',
-          'if [ -f "$dh" ]; then',
-          `  diff --unified "\${@: -2}" | "$dh"`,
-          "  exit $?",
-          "fi",
-          `diff --unified --color=always "\${@: -2}"`,
-          ""
-        ].join("\n")
+        `#!/bin/bash\ndiff --unified "\${@: -2}" | node "${process.argv[1]}" --diff-highlight\n`
       )
       await lib.chmod(wrapperPath, 0o755)
       exportVariable("NFT_DIFF", "nft-diff")
@@ -100045,7 +99223,9 @@ async function setup() {
 
 /* harmony default export */ const index = setup
 
-if (process.argv[1] === new URL(import.meta.url).pathname) {
+if (process.argv.includes("--diff-highlight")) {
+  runDiffHighlight()
+} else if (process.argv[1] === new URL(import.meta.url).pathname) {
   setup()
 }
 
