@@ -15,8 +15,8 @@ import { saveCache, restoreCache } from "@actions/cache"
 import { exec } from "@actions/exec"
 import diff from "fast-diff"
 
-const RED = "\x1b[31m",
-  GREEN = "\x1b[32m"
+const RED = "\x1b[91m",
+  GREEN = "\x1b[92m"
 const RED_HL = "\x1b[41;30m",
   GREEN_HL = "\x1b[42;30m",
   RESET = "\x1b[m"
