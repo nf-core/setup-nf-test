@@ -11728,14 +11728,14 @@ import { createRequire as __WEBPACK_EXTERNAL_createRequire } from "module"
       return fs.writeFileSync(file, str, options)
     }
 
-    const jsonfile = {
+    // NOTE: do not change this export format; required for ESM compat
+    // see https://github.com/jprichardson/node-jsonfile/pull/162 for details
+    module.exports = {
       readFile,
       readFileSync,
       writeFile,
       writeFileSync
     }
-
-    module.exports = jsonfile
 
     /***/
   },
