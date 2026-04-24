@@ -15,10 +15,10 @@ import { saveCache, restoreCache } from "@actions/cache"
 import { exec } from "@actions/exec"
 import diff from "fast-diff"
 
-const RED = "\x1b[91m",
-  GREEN = "\x1b[92m"
-const RED_HL = "\x1b[41;30m",
-  GREEN_HL = "\x1b[42;30m",
+const LINE_RED = "\x1b[48;5;52m\x1b[97m",
+  LINE_GREEN = "\x1b[48;5;22m\x1b[97m"
+const RED_HL = "\x1b[48;5;124m",
+  GREEN_HL = "\x1b[48;5;34m",
   RESET = "\x1b[m"
 
 async function runDiffHighlight() {
@@ -34,11 +34,11 @@ async function runDiffHighlight() {
       const oldText = olds[0].slice(1),
         newText = news[0].slice(1)
       const changes = diff(oldText, newText)
-      let oldOut = RED + "-",
-        newOut = GREEN + "+"
+      let oldOut = LINE_RED + "-",
+        newOut = LINE_GREEN + "+"
       for (const [op, text] of changes) {
-        if (op === -1) oldOut += RED_HL + text + RED
-        else if (op === 1) newOut += GREEN_HL + text + GREEN
+        if (op === -1) oldOut += RED_HL + text + LINE_RED
+        else if (op === 1) newOut += GREEN_HL + text + LINE_GREEN
         else {
           oldOut += text
           newOut += text
@@ -47,8 +47,8 @@ async function runDiffHighlight() {
       process.stdout.write(oldOut + RESET + "\n")
       process.stdout.write(newOut + RESET + "\n")
     } else {
-      olds.forEach(l => process.stdout.write(RED + l + RESET + "\n"))
-      news.forEach(l => process.stdout.write(GREEN + l + RESET + "\n"))
+      olds.forEach(l => process.stdout.write(LINE_RED + l + RESET + "\n"))
+      news.forEach(l => process.stdout.write(LINE_GREEN + l + RESET + "\n"))
     }
     olds = []
     news = []
